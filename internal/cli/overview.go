@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -59,7 +58,7 @@ func Overview(ctx context.Context, deps Deps, corpusDir string, args []string, s
 	}
 	ov := buildOverview(videos)
 	path := filepath.Join(corpusDir, OverviewFile)
-	if err := writeFileAtomic(path, []byte(ov.render())); err != nil {
+	if err := corpus.WriteFileAtomic(path, []byte(ov.render())); err != nil {
 		fmt.Fprintf(stderr, "overview: %v\n", err)
 		return 1
 	}
@@ -74,54 +73,29 @@ type scannedVideo struct {
 	Segments *corpus.Segments
 }
 
-// scanCorpus walks <corpus>/<channel>/<video>/ and reads each Video's files.
-// A file that fails to parse is reported on stderr and its Video skipped.
+// scanCorpus walks the Corpus and reads each Video's files. A file that
+// fails to parse is reported on stderr and its Video skipped.
 func scanCorpus(corpusDir string, stderr io.Writer) ([]scannedVideo, error) {
-	channels, err := os.ReadDir(corpusDir)
-	if os.IsNotExist(err) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("scan corpus: %w", err)
-	}
 	var videos []scannedVideo
-	for _, ch := range channels {
-		if !ch.IsDir() || strings.HasPrefix(ch.Name(), ".") {
-			continue
-		}
-		channelDir := filepath.Join(corpusDir, ch.Name())
-		entries, err := os.ReadDir(channelDir)
+	err := corpus.WalkVideos(corpusDir, func(_, videoDir string) error {
+		sv, err := readVideoDir(videoDir)
 		if err != nil {
-			return nil, fmt.Errorf("scan %s: %w", channelDir, err)
+			fmt.Fprintf(stderr, "overview: %v; Video skipped\n", err)
+			return nil
 		}
-		for _, v := range entries {
-			if !v.IsDir() || strings.HasPrefix(v.Name(), ".") {
-				continue
-			}
-			videoDir := filepath.Join(channelDir, v.Name())
-			sv, err := readVideoDir(videoDir)
-			if err != nil {
-				fmt.Fprintf(stderr, "overview: %v; Video skipped\n", err)
-				continue
-			}
-			videos = append(videos, sv)
-		}
+		videos = append(videos, sv)
+		return nil
+	})
+	if err != nil {
+		return nil, err
 	}
 	return videos, nil
 }
 
 func readVideoDir(videoDir string) (scannedVideo, error) {
-	metaPath := filepath.Join(videoDir, corpus.VideoFile)
-	data, err := os.ReadFile(metaPath)
+	meta, err := corpus.ReadVideo(filepath.Join(videoDir, corpus.VideoFile))
 	if err != nil {
 		return scannedVideo{}, err
-	}
-	var meta corpus.Video
-	if err := json.Unmarshal(data, &meta); err != nil {
-		return scannedVideo{}, fmt.Errorf("parse %s: %w", metaPath, err)
-	}
-	if meta.VideoID == "" {
-		return scannedVideo{}, fmt.Errorf("parse %s: missing video_id", metaPath)
 	}
 	sv := scannedVideo{Meta: meta}
 
@@ -417,31 +391,4 @@ func plural(n int, noun string) string {
 		return fmt.Sprintf("1 %s", noun)
 	}
 	return fmt.Sprintf("%d %ss", n, noun)
-}
-
-// writeFileAtomic writes data to a temporary sibling and renames it over path.
-func writeFileAtomic(path string, data []byte) error {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return err
-	}
-	tmp, err := os.CreateTemp(dir, "."+filepath.Base(path)+".tmp-")
-	if err != nil {
-		return err
-	}
-	tmpName := tmp.Name()
-	if _, err := tmp.Write(data); err != nil {
-		tmp.Close()
-		os.Remove(tmpName)
-		return err
-	}
-	if err := tmp.Close(); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	if err := os.Rename(tmpName, path); err != nil {
-		os.Remove(tmpName)
-		return err
-	}
-	return nil
 }
