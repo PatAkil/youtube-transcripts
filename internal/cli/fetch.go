@@ -55,20 +55,48 @@ func Fetch(ctx context.Context, deps Deps, corpusDir string, args []string, stdo
 		return 1
 	}
 
-	existing, err := corpus.FindVideo(corpusDir, videoID)
+	res, err := fetchVideo(ctx, deps, corpusDir, videoID, force)
 	if err != nil {
 		fmt.Fprintf(stderr, "fetch %s: %v\n", videoID, err)
 		return 1
 	}
-	if existing != "" && !force {
+	if res.AlreadyPresent {
 		fmt.Fprintf(stdout, "%s already present\n", videoID)
 		return 0
+	}
+	fmt.Fprintln(stdout, res.Summary())
+	return 0
+}
+
+// fetchResult is what one Video fetch produced. sync reuses it for its own
+// per-Video reporting.
+type fetchResult struct {
+	// AlreadyPresent is set when the Video was in the Corpus and force was
+	// false; nothing was fetched or written.
+	AlreadyPresent bool
+	Video          corpus.Video
+	Lines          int
+}
+
+// Summary is the one-line report printed after a successful fetch.
+func (r fetchResult) Summary() string {
+	return fmt.Sprintf("%s  %s  %s  lines=%d", r.Video.VideoID, r.Video.ChannelName, r.Video.Title, r.Lines)
+}
+
+// fetchVideo is the per-Video fetch shared by fetch and sync: presence check,
+// upstream calls, atomic write of the Video directory. It prints nothing.
+func fetchVideo(ctx context.Context, deps Deps, corpusDir, videoID string, force bool) (fetchResult, error) {
+	existing, err := corpus.FindVideo(corpusDir, videoID)
+	if err != nil {
+		return fetchResult{}, err
+	}
+	if existing != "" && !force {
+		return fetchResult{AlreadyPresent: true}, nil
 	}
 
 	tr, err := deps.YouTube.FetchTranscript(ctx, videoID)
 	if err != nil {
-		fmt.Fprintf(stderr, "fetch %s: %v\n", videoID, err)
-		return 1
+		return fetchResult{}, err
 	}
 
 	video := corpus.Video{
@@ -86,8 +114,7 @@ func Fetch(ctx context.Context, deps Deps, corpusDir string, args []string, stdo
 	}
 	videoJSON, err := corpus.MarshalJSON(video)
 	if err != nil {
-		fmt.Fprintf(stderr, "fetch %s: %v\n", videoID, err)
-		return 1
+		return fetchResult{}, err
 	}
 	files := map[string][]byte{corpus.VideoFile: videoJSON}
 	if tr.Track != youtube.TrackNone {
@@ -96,12 +123,9 @@ func Fetch(ctx context.Context, deps Deps, corpusDir string, args []string, stdo
 	// The agent pass owns segments.json; a refetch carries it over untouched.
 	keep := []string{corpus.SegmentsFile}
 	if err := corpus.WriteVideoDir(corpusDir, video.ChannelID, video.VideoID, files, existing, keep); err != nil {
-		fmt.Fprintf(stderr, "fetch %s: %v\n", videoID, err)
-		return 1
+		return fetchResult{}, err
 	}
-
-	fmt.Fprintf(stdout, "%s  %s  %s  lines=%d\n", video.VideoID, video.ChannelName, video.Title, len(tr.Cues))
-	return 0
+	return fetchResult{Video: video, Lines: len(tr.Cues)}, nil
 }
 
 func renderTranscript(cues []youtube.Cue) string {
