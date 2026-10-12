@@ -48,7 +48,7 @@ func ParseVideoID(s string) (string, error) {
 			candidate = segments[1]
 		}
 	default:
-		return "", fmt.Errorf("not a YouTube URL: %q", s)
+		return "", fmt.Errorf("not a YouTube video ID or URL: %q", s)
 	}
 
 	if !videoIDPattern.MatchString(candidate) {
