@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -265,5 +266,49 @@ func TestFetchForceMovesVideoWhenChannelDirectoryChanged(t *testing.T) {
 	}
 	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
 		t.Error("stale video directory under the previous channel directory still exists")
+	}
+}
+
+func TestFetchUpstreamErrorLeavesNothingBehind(t *testing.T) {
+	corpusDir := t.TempDir()
+	fake := &youtube.Fake{Errors: map[string]error{"dQw4w9WgXcQ": errors.New("youtube: page has no player response (consent or bot check)")}}
+
+	code, stdout, stderr := runFetch(t, corpusDir, fake, "dQw4w9WgXcQ")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing", stdout)
+	}
+	if !strings.Contains(stderr, "dQw4w9WgXcQ") || !strings.Contains(stderr, "no player response") {
+		t.Errorf("stderr = %q, want the video ID and the upstream reason", stderr)
+	}
+	if got := entries(t, corpusDir); len(got) != 0 {
+		t.Errorf("corpus holds %v after a failed fetch, want nothing", got)
+	}
+}
+
+func TestFetchUpstreamErrorLeavesExistingChannelDirectoryUntouched(t *testing.T) {
+	corpusDir := t.TempDir()
+	writeFile(t, filepath.Join(corpusDir, "UCabc123", "otherVideo1", "video.json"), "{}\n")
+	fake := &youtube.Fake{Errors: map[string]error{"dQw4w9WgXcQ": errors.New("boom")}}
+
+	if code, _, _ := runFetch(t, corpusDir, fake, "dQw4w9WgXcQ"); code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if got := entries(t, filepath.Join(corpusDir, "UCabc123")); strings.Join(got, ",") != "otherVideo1" {
+		t.Errorf("channel directory holds %v, want only the pre-existing video", got)
+	}
+}
+
+func TestFetchRejectsBadVideoReference(t *testing.T) {
+	fake := &youtube.Fake{}
+	code, _, stderr := runFetch(t, t.TempDir(), fake, "https://vimeo.com/12345")
+	if code != 1 || stderr == "" {
+		t.Errorf("exit %d, stderr %q; want 1 and a reason", code, stderr)
+	}
+	if fake.Calls != 0 {
+		t.Errorf("YouTube was called %d times for an unparseable reference", fake.Calls)
 	}
 }

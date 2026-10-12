@@ -10,6 +10,25 @@ import (
 	"github.com/PatAkil/youtube-transcripts/internal/youtube"
 )
 
+const fetchUsage = `Store one Video's Transcript and metadata in the Corpus.
+
+Usage:
+  youtube-transcripts [--corpus DIR] fetch [--force] <video ID or URL>
+
+The Video may be given as a bare YouTube video ID or as a watch, youtu.be,
+shorts or embed URL. The Transcript comes from the Video's English track
+(a manual track is preferred over an auto-generated one) and is written as
+timestamped text under <corpus>/<channel ID>/<video ID>/, next to video.json.
+A Video with no English track is recorded with transcript "none".
+
+A Video already in the Corpus is skipped unless --force is given, which
+refetches it. A segments.json written by the agent pass is never touched.
+
+Flags:
+  --force    Refetch a Video that is already present
+  --help     Show this help
+`
+
 // Fetch stores one Video's Transcript and metadata in the Corpus. It returns
 // the process exit code.
 func Fetch(ctx context.Context, deps Deps, corpusDir string, args []string, stdout, stderr io.Writer) int {
@@ -19,12 +38,15 @@ func Fetch(ctx context.Context, deps Deps, corpusDir string, args []string, stdo
 		switch a {
 		case "--force", "-force":
 			force = true
+		case "--help", "-h":
+			fmt.Fprint(stdout, fetchUsage)
+			return 0
 		default:
 			positional = append(positional, a)
 		}
 	}
 	if len(positional) != 1 {
-		fmt.Fprintln(stderr, "fetch: expected exactly one video ID or URL")
+		fmt.Fprintf(stderr, "fetch: expected exactly one video ID or URL\n\n%s", fetchUsage)
 		return 1
 	}
 	videoID, err := youtube.ParseVideoID(positional[0])
