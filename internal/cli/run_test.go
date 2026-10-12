@@ -86,14 +86,7 @@ func TestRunCorpusFlagSetsCorpusRoot(t *testing.T) {
 func TestRunDefaultsCorpusToCorpusDirectory(t *testing.T) {
 	// Run in a temp working directory so the default resolves there.
 	wd := t.TempDir()
-	orig, err := os.Getwd()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.Chdir(wd); err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { _ = os.Chdir(orig) })
+	t.Chdir(wd)
 	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
 
 	if code, _, stderr := runCLI(t, fake, "fetch", "dQw4w9WgXcQ"); code != 0 {

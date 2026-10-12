@@ -13,16 +13,12 @@ type Fake struct {
 	// Errors makes FetchTranscript (keyed by video ID) or ListNewestVideos
 	// (keyed by channel ID) fail with the given error.
 	Errors map[string]error
-	// Calls counts every FetchTranscript and ListNewestVideos call, so a test
-	// can assert that YouTube was not contacted.
-	Calls int
 }
 
 var _ Client = (*Fake)(nil)
 
 // ListNewestVideos returns the canned feed for channelID.
 func (f *Fake) ListNewestVideos(_ context.Context, channelID string) ([]VideoMeta, error) {
-	f.Calls++
 	if err, ok := f.Errors[channelID]; ok {
 		return nil, err
 	}
@@ -35,7 +31,6 @@ func (f *Fake) ListNewestVideos(_ context.Context, channelID string) ([]VideoMet
 
 // FetchTranscript returns the canned Transcript for videoID.
 func (f *Fake) FetchTranscript(_ context.Context, videoID string) (Transcript, error) {
-	f.Calls++
 	if err, ok := f.Errors[videoID]; ok {
 		return Transcript{}, err
 	}

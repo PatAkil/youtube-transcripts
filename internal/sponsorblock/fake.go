@@ -9,16 +9,12 @@ type Fake struct {
 	Windows map[string][]Window
 	// Errors makes FetchSlots fail for the given video ID.
 	Errors map[string]error
-	// Calls counts every FetchSlots call, so a test can assert that
-	// SponsorBlock was not contacted.
-	Calls int
 }
 
 var _ Client = (*Fake)(nil)
 
 // FetchSlots returns the canned Windows for videoID.
 func (f *Fake) FetchSlots(_ context.Context, videoID string) ([]Window, error) {
-	f.Calls++
 	if err, ok := f.Errors[videoID]; ok {
 		return nil, err
 	}

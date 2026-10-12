@@ -125,8 +125,6 @@ func entries(t *testing.T, dir string) []string {
 	return names
 }
 
-var _ = strings.Join
-
 func TestFetchRecordsAutoTrack(t *testing.T) {
 	corpusDir := t.TempDir()
 	tr := manualTranscript()
@@ -194,7 +192,9 @@ func TestFetchSkipsVideoAlreadyPresentWithoutCallingYouTube(t *testing.T) {
 	videoDir := filepath.Join(corpusDir, "UCother", "dQw4w9WgXcQ")
 	writeFile(t, filepath.Join(videoDir, "video.json"), "{}\n")
 	writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), "[]\n")
-	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+	// Any YouTube call for this Video fails, so reaching YouTube would show
+	// up as a failed command rather than a silent refetch.
+	fake := &youtube.Fake{Errors: map[string]error{"dQw4w9WgXcQ": errors.New("youtube must not be contacted for a present Video")}}
 
 	code, stdout, stderr := runFetch(t, corpusDir, fake, "dQw4w9WgXcQ")
 
@@ -203,9 +203,6 @@ func TestFetchSkipsVideoAlreadyPresentWithoutCallingYouTube(t *testing.T) {
 	}
 	if stdout != "dQw4w9WgXcQ already present\n" {
 		t.Errorf("stdout = %q, want %q", stdout, "dQw4w9WgXcQ already present\n")
-	}
-	if fake.Calls != 0 {
-		t.Errorf("YouTube was called %d times, want 0", fake.Calls)
 	}
 	if got := readFile(t, filepath.Join(videoDir, "video.json")); got != "{}\n" {
 		t.Errorf("video.json was rewritten to %q", got)
@@ -343,13 +340,15 @@ func TestFetchUpstreamErrorLeavesExistingChannelDirectoryUntouched(t *testing.T)
 }
 
 func TestFetchRejectsBadVideoReference(t *testing.T) {
+	// The empty fake fails every call with "fake youtube: unknown video", so
+	// that phrase on stderr would mean YouTube was contacted anyway.
 	fake := &youtube.Fake{}
 	code, _, stderr := runFetch(t, t.TempDir(), fake, "https://vimeo.com/12345")
 	if code != 1 || stderr == "" {
 		t.Errorf("exit %d, stderr %q; want 1 and a reason", code, stderr)
 	}
-	if fake.Calls != 0 {
-		t.Errorf("YouTube was called %d times for an unparseable reference", fake.Calls)
+	if strings.Contains(stderr, "fake youtube") {
+		t.Errorf("YouTube was contacted for an unparseable reference: %q", stderr)
 	}
 }
 

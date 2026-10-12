@@ -28,7 +28,4 @@ func TestFakeReturnsCannedWindowsNoDataAndErrors(t *testing.T) {
 	if _, err = f.FetchSlots(ctx, "broken"); !errors.Is(err, boom) {
 		t.Errorf("broken: err = %v, want %v", err, boom)
 	}
-	if f.Calls != 3 {
-		t.Errorf("Calls = %d, want 3", f.Calls)
-	}
 }

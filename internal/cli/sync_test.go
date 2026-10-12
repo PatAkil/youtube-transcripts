@@ -133,10 +133,13 @@ func TestSyncSecondRunSkipsEverythingAlreadyPresent(t *testing.T) {
 	if code, _, stderr := runSync(t, corpusDir, fake); code != 0 {
 		t.Fatalf("first run: exit %d, stderr %q", code, stderr)
 	}
-	// Mark the stored files so a refetch would be visible.
+	// Mark the stored files so a refetch would be visible, and make every
+	// Transcript fetch fail so one would also count as a failed Video.
 	marker := filepath.Join(corpusDir, "UCabc123", "aaaaaaaaaaa", "video.json")
 	writeFile(t, marker, "{\"marker\": true}\n")
-	fake.Calls = 0
+	for id := range fake.Transcripts {
+		fake.Errors[id] = errors.New("youtube must not be contacted for a present Video")
+	}
 
 	code, stdout, stderr := runSync(t, corpusDir, fake)
 
@@ -149,10 +152,6 @@ func TestSyncSecondRunSkipsEverythingAlreadyPresent(t *testing.T) {
 	assertSummary(t, stdout, 2, 0, 4, 0)
 	if got := readFile(t, marker); got != "{\"marker\": true}\n" {
 		t.Errorf("already present Video was rewritten: %q", got)
-	}
-	// Only the two feed listings reach YouTube; no Transcript is refetched.
-	if fake.Calls != 2 {
-		t.Errorf("YouTube was called %d times on the second run, want 2 (one feed per Channel)", fake.Calls)
 	}
 }
 
@@ -257,7 +256,11 @@ func TestSyncReportsMissingOrEmptyFollowedChannelsFile(t *testing.T) {
 			if tt.content != "" {
 				writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), tt.content)
 			}
+			// Every feed listing fails, so walking a Channel anyway would
+			// put this message on stderr.
 			fake := twoChannelFake()
+			fake.Errors["UCabc123"] = errors.New("youtube must not be contacted without Followed Channels")
+			fake.Errors["UCdef456"] = errors.New("youtube must not be contacted without Followed Channels")
 
 			code, _, stderr := runSync(t, corpusDir, fake)
 
@@ -267,8 +270,8 @@ func TestSyncReportsMissingOrEmptyFollowedChannelsFile(t *testing.T) {
 			if !strings.Contains(stderr, "followed-channels.json") {
 				t.Errorf("stderr does not name the Followed Channels file: %q", stderr)
 			}
-			if fake.Calls != 0 {
-				t.Errorf("YouTube was called %d times, want 0", fake.Calls)
+			if strings.Contains(stderr, "must not be contacted") {
+				t.Errorf("YouTube was contacted: %q", stderr)
 			}
 		})
 	}
