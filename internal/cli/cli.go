@@ -31,7 +31,7 @@ Usage:
 Commands:
   fetch     Store one Video's Transcript and metadata in the Corpus
   sync      Fetch new Videos from every Followed Channel (not available yet)
-  overview  Write the Sponsorship overview from the Segments files (not available yet)
+  overview  Write the Sponsorship overview from the Segments files
 
 Global flags:
   --corpus DIR   Corpus root directory (default "corpus", relative to the working directory)
@@ -87,7 +87,9 @@ func Run(args []string, stdout, stderr io.Writer, deps Deps) int {
 	switch sub {
 	case "fetch":
 		return Fetch(ctx, deps, corpusDir, rest, stdout, stderr)
-	case "sync", "overview":
+	case "overview":
+		return Overview(ctx, deps, corpusDir, rest, stdout, stderr)
+	case "sync":
 		fmt.Fprintf(stderr, "%s is not available yet\n", sub)
 		return 1
 	default:

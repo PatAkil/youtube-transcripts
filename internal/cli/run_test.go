@@ -103,11 +103,43 @@ func TestRunDefaultsCorpusToCorpusDirectory(t *testing.T) {
 	}
 }
 
-func TestRunSyncAndOverviewAreNotAvailableYet(t *testing.T) {
-	for _, sub := range []string{"sync", "overview"} {
-		code, _, stderr := runCLI(t, &youtube.Fake{}, sub)
-		if code != 1 || !strings.Contains(stderr, sub) {
-			t.Errorf("%s: exit %d, stderr %q; want 1 and a message naming it", sub, code, stderr)
+func TestRunSyncIsNotAvailableYet(t *testing.T) {
+	code, _, stderr := runCLI(t, &youtube.Fake{}, "sync")
+	if code != 1 || !strings.Contains(stderr, "sync") {
+		t.Errorf("sync: exit %d, stderr %q; want 1 and a message naming it", code, stderr)
+	}
+}
+
+func TestRunOverviewWritesOverviewUnderCorpusFlag(t *testing.T) {
+	corpusDir := t.TempDir()
+	dir := writeVideoFixture(t, corpusDir, video("UCabc123", "Example Channel", "dQw4w9WgXcQ", "An example video", "2024-01-02T15:04:05Z"))
+	writeSegmentsFixture(t, dir, processed(segment("Acme", 12.5, 60)))
+
+	code, stdout, stderr := runCLI(t, &youtube.Fake{}, "--corpus", corpusDir, "overview")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, "wrote "+filepath.Join(corpusDir, "overview.md")) {
+		t.Errorf("stdout = %q", stdout)
+	}
+	if got := readFile(t, filepath.Join(corpusDir, "overview.md")); !strings.Contains(got, "### Acme\n") {
+		t.Errorf("overview.md lacks the Sponsor:\n%s", got)
+	}
+}
+
+func TestRunOverviewHelp(t *testing.T) {
+	code, stdout, _ := runCLI(t, &youtube.Fake{}, "overview", "--help")
+	if code != 0 || !strings.Contains(stdout, "overview.md") {
+		t.Errorf("exit %d, stdout %q; want 0 and the overview help", code, stdout)
+	}
+}
+
+func TestRunHelpNoLongerMarksOverviewUnavailable(t *testing.T) {
+	_, stdout, _ := runCLI(t, &youtube.Fake{}, "--help")
+	for _, line := range strings.Split(stdout, "\n") {
+		if strings.Contains(line, "overview") && strings.Contains(line, "not available") {
+			t.Errorf("help still marks overview unavailable: %q", line)
 		}
 	}
 }

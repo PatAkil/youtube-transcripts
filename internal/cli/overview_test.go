@@ -300,3 +300,95 @@ _None._
 		t.Errorf("stdout = %q", stdout)
 	}
 }
+
+func TestOverviewNamesUnparseableFilesOnStderrAndSkipsThem(t *testing.T) {
+	corpusDir := t.TempDir()
+	good := writeVideoFixture(t, corpusDir, video("UCaaa", "Alpha", "aaaaaaaaaa1", "Good", "2024-01-01T00:00:00Z"))
+	writeSegmentsFixture(t, good, processed(segment("Acme", 12, 60)))
+	badSegments := writeVideoFixture(t, corpusDir, video("UCaaa", "Alpha", "aaaaaaaaaa2", "Hand-edited badly", "2024-02-01T00:00:00Z"))
+	writeSegmentsFixture(t, badSegments, `{"processed": "2026-10-12T09:30:00Z", "segments": [{"sponsor": "Globex", "start": 5, "end": 50, "origin": "guess"}]`+"\n")
+	badVideo := writeVideoFixture(t, corpusDir, video("UCbbb", "Beta", "bbbbbbbbbb1", "Broken metadata", "2024-03-01T00:00:00Z"))
+	if err := os.WriteFile(filepath.Join(badVideo, corpus.VideoFile), []byte("{not json\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	code, stdout, stderr := runOverview(t, corpusDir)
+
+	if code != 0 {
+		t.Errorf("exit %d, want 0 even with skipped files", code)
+	}
+	lines := strings.Split(strings.TrimSuffix(stderr, "\n"), "\n")
+	if len(lines) != 2 {
+		t.Fatalf("stderr has %d lines, want one per skipped file:\n%s", len(lines), stderr)
+	}
+	if !strings.Contains(lines[0], filepath.Join(badSegments, corpus.SegmentsFile)) {
+		t.Errorf("first stderr line %q does not name the bad segments.json", lines[0])
+	}
+	if !strings.Contains(lines[1], filepath.Join(badVideo, corpus.VideoFile)) {
+		t.Errorf("second stderr line %q does not name the bad video.json", lines[1])
+	}
+	got := readFile(t, filepath.Join(corpusDir, "overview.md"))
+	if !strings.Contains(got, "### Acme\n") || !strings.Contains(got, "Good (aaaaaaaaaa1)") {
+		t.Errorf("overview.md lost the good Video:\n%s", got)
+	}
+	for _, unwanted := range []string{"Globex", "aaaaaaaaaa2", "bbbbbbbbbb1", "Beta"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("overview.md mentions skipped %q:\n%s", unwanted, got)
+		}
+	}
+	if !strings.HasSuffix(stdout, "sponsors=1  channels=1  awaiting=0\n") {
+		t.Errorf("stdout = %q", stdout)
+	}
+}
+
+func TestOverviewIsByteIdenticalOnAnUnchangedCorpus(t *testing.T) {
+	corpusDir := t.TempDir()
+	a := writeVideoFixture(t, corpusDir, video("UCaaa", "Alpha", "aaaaaaaaaa1", "A1", "2024-01-01T00:00:00Z"))
+	writeSegmentsFixture(t, a, processed(segment("Acme", 12, 60), segment("Globex", 700, 760)))
+	b := writeVideoFixture(t, corpusDir, video("UCbbb", "Beta", "bbbbbbbbbb1", "B1", "2024-02-01T00:00:00Z"))
+	writeSegmentsFixture(t, b, processed(segment("acme", 30, 90)))
+	writeVideoFixture(t, corpusDir, video("UCbbb", "Beta", "bbbbbbbbbb2", "B2", "2024-03-01T00:00:00Z"))
+
+	if code, _, stderr := runOverview(t, corpusDir); code != 0 || stderr != "" {
+		t.Fatalf("first run: exit %d, stderr %q", code, stderr)
+	}
+	first := readFile(t, filepath.Join(corpusDir, "overview.md"))
+	later := Deps{Now: func() time.Time { return fixedNow.Add(48 * time.Hour) }}
+	var out, errOut bytes.Buffer
+	if code := Overview(context.Background(), later, corpusDir, nil, &out, &errOut); code != 0 || errOut.Len() != 0 {
+		t.Fatalf("second run: exit %d, stderr %q", code, errOut.String())
+	}
+	second := readFile(t, filepath.Join(corpusDir, "overview.md"))
+	if first != second {
+		t.Errorf("overview.md changed between runs:\n%s\n---\n%s", first, second)
+	}
+	if strings.Contains(first, "2026") {
+		t.Errorf("overview.md carries a generation timestamp:\n%s", first)
+	}
+}
+
+func TestOverviewRejectsUnexpectedArguments(t *testing.T) {
+	corpusDir := t.TempDir()
+	code, _, stderr := runOverview(t, corpusDir, "dQw4w9WgXcQ")
+	if code != 1 || !strings.Contains(stderr, "dQw4w9WgXcQ") || !strings.Contains(stderr, "Usage:") {
+		t.Errorf("exit %d, stderr %q; want 1 naming the argument and the usage", code, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(corpusDir, "overview.md")); !os.IsNotExist(err) {
+		t.Errorf("overview.md written despite the bad argument (stat err %v)", err)
+	}
+}
+
+func TestOverviewOnEmptyOrMissingCorpusWritesAnEmptyOverview(t *testing.T) {
+	corpusDir := filepath.Join(t.TempDir(), "corpus")
+	code, stdout, stderr := runOverview(t, corpusDir)
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	got := readFile(t, filepath.Join(corpusDir, "overview.md"))
+	if strings.Count(got, "_None._") != 4 {
+		t.Errorf("empty overview should mark all four sections as none:\n%s", got)
+	}
+	if !strings.HasSuffix(stdout, "sponsors=0  channels=0  awaiting=0\n") {
+		t.Errorf("stdout = %q", stdout)
+	}
+}

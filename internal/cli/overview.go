@@ -99,7 +99,7 @@ func scanCorpus(corpusDir string, stderr io.Writer) ([]scannedVideo, error) {
 			videoDir := filepath.Join(channelDir, v.Name())
 			sv, err := readVideoDir(videoDir)
 			if err != nil {
-				fmt.Fprintf(stderr, "overview: skipping %s: %v\n", videoDir, err)
+				fmt.Fprintf(stderr, "overview: %v; Video skipped\n", err)
 				continue
 			}
 			videos = append(videos, sv)
