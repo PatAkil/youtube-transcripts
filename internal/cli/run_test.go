@@ -104,11 +104,42 @@ func TestRunDefaultsCorpusToCorpusDirectory(t *testing.T) {
 	}
 }
 
-func TestRunSyncAndOverviewAreNotAvailableYet(t *testing.T) {
-	for _, sub := range []string{"sync", "overview"} {
-		code, _, stderr := runCLI(t, &youtube.Fake{}, sub)
-		if code != 1 || !strings.Contains(stderr, sub) {
-			t.Errorf("%s: exit %d, stderr %q; want 1 and a message naming it", sub, code, stderr)
+func TestRunSyncHelp(t *testing.T) {
+	code, stdout, _ := runCLI(t, &youtube.Fake{}, "sync", "--help")
+	if code != 0 {
+		t.Errorf("exit %d, want 0", code)
+	}
+	for _, want := range []string{"sync", "Followed Channel", "followed-channels.json"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("sync help lacks %q:\n%s", want, stdout)
 		}
+	}
+}
+
+func TestRunSyncUsesCorpusFlag(t *testing.T) {
+	corpusDir := t.TempDir()
+	writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), `[{"channel_id": "UCabc123", "name": "Example Channel"}]`)
+	fake := &youtube.Fake{
+		Feeds:       map[string][]youtube.VideoMeta{"UCabc123": {manualTranscript().Meta}},
+		Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()},
+	}
+
+	code, stdout, stderr := runCLI(t, fake, "--corpus", corpusDir, "sync")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if !strings.Contains(stdout, "dQw4w9WgXcQ  Example Channel") || !strings.Contains(stdout, "channels walked: 1") {
+		t.Errorf("stdout = %q", stdout)
+	}
+	if _, err := os.Stat(filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ", "transcript.txt")); err != nil {
+		t.Errorf("transcript not written under --corpus directory: %v", err)
+	}
+}
+
+func TestRunOverviewIsNotAvailableYet(t *testing.T) {
+	code, _, stderr := runCLI(t, &youtube.Fake{}, "overview")
+	if code != 1 || !strings.Contains(stderr, "overview") {
+		t.Errorf("overview: exit %d, stderr %q; want 1 and a message naming it", code, stderr)
 	}
 }
