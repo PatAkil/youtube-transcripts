@@ -9,6 +9,7 @@ import (
 	"html"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strconv"
 	"strings"
@@ -33,12 +34,66 @@ func NewClient(httpClient *http.Client) *HTTPClient {
 
 const (
 	watchURL  = "https://www.youtube.com/watch"
+	feedURL   = "https://www.youtube.com/feeds/videos.xml"
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
-// ListNewestVideos is filled in by the sync ticket.
-func (c *HTTPClient) ListNewestVideos(_ context.Context, channelID string) ([]VideoMeta, error) {
-	return nil, fmt.Errorf("youtube: listing videos of channel %s is not available yet", channelID)
+// ListNewestVideos reads the Channel's public Atom feed, which lists its
+// newest ~15 Videos. A mistyped channel ID answers 404 and is an error.
+func (c *HTTPClient) ListNewestVideos(ctx context.Context, channelID string) ([]VideoMeta, error) {
+	body, err := c.get(ctx, feedURL+"?channel_id="+url.QueryEscape(channelID))
+	if err != nil {
+		return nil, fmt.Errorf("youtube: channel %s feed: %w", channelID, err)
+	}
+	videos, err := parseChannelFeed(body, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("youtube: channel %s feed: %w", channelID, err)
+	}
+	return videos, nil
+}
+
+// channelFeed is the slice of the Atom feed the CLI reads. Entry fields in
+// the yt: namespace are matched by local name, which encoding/xml allows.
+type channelFeed struct {
+	XMLName xml.Name `xml:"feed"`
+	Title   string   `xml:"title"`
+	Entries []struct {
+		VideoID   string `xml:"videoId"`
+		ChannelID string `xml:"channelId"`
+		Title     string `xml:"title"`
+		Author    string `xml:"author>name"`
+		Published string `xml:"published"`
+	} `xml:"entry"`
+}
+
+// parseChannelFeed decodes a channel feed into Video metadata in feed order
+// (newest first). An entry without a video ID is skipped.
+func parseChannelFeed(body []byte, channelID string) ([]VideoMeta, error) {
+	var feed channelFeed
+	if err := xml.Unmarshal(body, &feed); err != nil {
+		return nil, fmt.Errorf("decode: %w", err)
+	}
+	videos := make([]VideoMeta, 0, len(feed.Entries))
+	for _, e := range feed.Entries {
+		if e.VideoID == "" {
+			continue
+		}
+		m := VideoMeta{
+			VideoID:     e.VideoID,
+			ChannelID:   e.ChannelID,
+			ChannelName: e.Author,
+			Title:       e.Title,
+			Published:   parseDate(e.Published),
+		}
+		if m.ChannelID == "" {
+			m.ChannelID = channelID
+		}
+		if m.ChannelName == "" {
+			m.ChannelName = feed.Title
+		}
+		videos = append(videos, m)
+	}
+	return videos, nil
 }
 
 // FetchTranscript loads the watch page, picks the English track (manual
