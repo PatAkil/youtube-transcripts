@@ -94,13 +94,20 @@ func WriteVideoDir(corpusDir, channelID, videoID string, files map[string][]byte
 		}
 	}
 
-	// Move any directory already at the final path aside, swap the new one
-	// in, then drop the old one. If the swap fails the old directory is put
-	// back, so the Corpus never loses a Video half-way.
-	old := final + ".old"
+	// Retire any directory already at the final path under a dot-prefixed
+	// name (Corpus scans skip dot-prefixed entries, so a crash between the
+	// two renames never shows up as a Video), swap the new one in, then drop
+	// the retired one. If the swap fails the retired directory is put back,
+	// so the Corpus never loses a Video half-way. A retired directory left by
+	// an earlier crash is removed first so it cannot block the rename.
+	retired := filepath.Join(channelDir, "."+videoID+".old")
+	if err := os.RemoveAll(retired); err != nil {
+		cleanupTmp()
+		return fmt.Errorf("remove stale retired video directory: %w", err)
+	}
 	hadOld := false
 	if _, err := os.Stat(final); err == nil {
-		if err := os.Rename(final, old); err != nil {
+		if err := os.Rename(final, retired); err != nil {
 			cleanupTmp()
 			return fmt.Errorf("move aside existing video directory: %w", err)
 		}
@@ -109,18 +116,19 @@ func WriteVideoDir(corpusDir, channelID, videoID string, files map[string][]byte
 	if err := os.Rename(tmp, final); err != nil {
 		cleanupTmp()
 		if hadOld {
-			_ = os.Rename(old, final)
+			_ = os.Rename(retired, final)
 		}
 		return fmt.Errorf("move video directory into place: %w", err)
 	}
+	// From here the Video is in place; what follows is cleanup only.
 	if hadOld {
-		if err := os.RemoveAll(old); err != nil {
-			return fmt.Errorf("remove previous video directory: %w", err)
+		if err := os.RemoveAll(retired); err != nil {
+			return fmt.Errorf("video %s written, but cleanup failed: remove retired directory %s: %w", videoID, retired, err)
 		}
 	}
 	if previous != "" && filepath.Clean(previous) != filepath.Clean(final) {
 		if err := os.RemoveAll(previous); err != nil {
-			return fmt.Errorf("remove previous video directory: %w", err)
+			return fmt.Errorf("video %s written, but cleanup failed: remove previous directory %s: %w", videoID, previous, err)
 		}
 	}
 	return nil

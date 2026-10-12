@@ -249,6 +249,33 @@ func TestFetchForceRefetchesAndKeepsSegmentsFile(t *testing.T) {
 	}
 }
 
+func TestFetchForceSurvivesStaleRetiredDirectoryAndLeavesOnlyTheVideo(t *testing.T) {
+	corpusDir := t.TempDir()
+	channelDir := filepath.Join(corpusDir, "UCabc123")
+	videoDir := filepath.Join(channelDir, "dQw4w9WgXcQ")
+	writeFile(t, filepath.Join(videoDir, "video.json"), "{\"stale\": true}\n")
+	// A retired copy left behind by an earlier --force that crashed between
+	// its two renames. It is dot-prefixed so overview and presence skip it,
+	// and it must not block the next --force.
+	writeFile(t, filepath.Join(channelDir, ".dQw4w9WgXcQ.old", "video.json"), "{\"older\": true}\n")
+	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+
+	code, stdout, stderr := runFetch(t, corpusDir, fake, "--force", "dQw4w9WgXcQ")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, "dQw4w9WgXcQ  Example Channel  An example video  lines=3") {
+		t.Errorf("stdout = %q, want the fetch summary line", stdout)
+	}
+	if video := decodeVideo(t, filepath.Join(videoDir, "video.json")); video["title"] != "An example video" {
+		t.Errorf("video.json was not rewritten: %v", video)
+	}
+	if got := entries(t, channelDir); strings.Join(got, ",") != "dQw4w9WgXcQ" {
+		t.Errorf("channel directory holds %v, want only the video directory (no retired or temp leftovers)", got)
+	}
+}
+
 func TestFetchForceDoesNotCreateSegmentsFile(t *testing.T) {
 	corpusDir := t.TempDir()
 	videoDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
