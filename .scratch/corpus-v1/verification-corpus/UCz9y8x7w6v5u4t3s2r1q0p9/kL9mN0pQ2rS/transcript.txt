@@ -1,0 +1,31 @@
+[00:00] last time we got the gantry moving under its own power and today we're finishing the frame
+[00:06] and starting on the electronics
+[00:09] if you're new here subscribe and hit the bell so you don't miss part four
+[00:14] quick recap the whole table is built from offcuts from a demolition job
+[00:20] the rails came off an old sliding door and the stepper motors are from a dead printer
+[00:27] the bit I was dreading was welding the frame square because my welding is honestly not great
+[00:34] so I built a jig out of two bits of angle iron and clamped everything down before tacking
+[00:41] let me show you how that went
+[00:44] first tack here then diagonally opposite to pull it back if it moves
+[00:51] you can see it moved about a millimetre which for this table is fine
+[00:57] the torch height control will take care of anything smaller than that
+[01:03] and then I ran the full beads in short sections to keep the heat down
+[14:20] so that's the frame welded up and honestly it came out straighter than I expected
+[14:27] before we move to the electronics let me take a minute for today's sponsor
+[14:32] this part of the video is brought to you by incogni
+[14:36] a few months ago I started getting spam calls every single day and it turns out my number was sitting in a dozen data broker databases
+[14:46] incogni contacts those brokers on your behalf and makes them delete your data and it keeps doing it because the brokers keep re adding you
+[14:56] you can see the progress on a dashboard which is weirdly satisfying
+[15:01] go to incogni dot com slash buildlog or use code buildlog at checkout for sixty percent off an annual plan
+[15:10] thanks to incogni for supporting the channel
+[15:13] right electronics the controller board arrived last week and it's a four axis board even though we only need three
+[15:21] the spare axis is going to drive the torch height control later
+[15:27] wiring the steppers is straightforward once you work out which pairs are which coils
+[15:34] I used a multimeter to find the pairs then labelled everything because future me will thank present me
+[15:42] the plasma cutter itself connects through a relay so the board can fire it
+[15:49] and that's the point where I realised the cutter's trigger runs at mains voltage
+[15:55] so we're using an optoisolated relay and I'm keeping my hands well away from it
+[29:30] and that's where we'll leave it for today the gantry runs the cutter fires and nothing has caught fire
+[29:38] if you want the wiring diagram and the parts list sign up to the newsletter in the description
+[29:44] and the plans for the table are on the merch store along with the shirts
+[29:50] next time we cut our first part see you then

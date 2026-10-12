@@ -1,0 +1,34 @@
+[00:00] Hey everyone, welcome back to the channel.
+[00:04] Today we're pulling apart the networking stack of a budget mesh router to find out why it drops connections every evening.
+[00:12] I've had this thing on the bench for two weeks now and the results surprised me.
+[00:19] Before we get into the teardown, let me tell you what we'll cover.
+[00:25] First the hardware, then the firmware, then the fix that actually worked.
+[00:31] Oh, and if you want the raw packet captures, they're linked in the description.
+[00:38] Alright, one quick thing before we start.
+[00:42] This video is sponsored by NordVPN.
+[00:46] If you're on a network you don't control, like a hotel or a coffee shop, everything you send is visible to whoever runs it.
+[00:55] NordVPN encrypts that traffic so the only thing the network sees is noise.
+[01:02] I've been using it on my laptop and my phone for the past year, and the thing I like most is Threat Protection, which blocks trackers and malicious sites before they load.
+[01:14] Go to nordvpn dot com slash techtangent for a huge discount on a two year plan plus four extra months free.
+[01:22] That link is in the description, and there's a thirty day money back guarantee so there's no risk in trying it.
+[01:29] And a second thank you to Brilliant for also sponsoring this video.
+[01:34] Brilliant is where I actually learned how the maths behind signal processing works.
+[01:40] Their courses are interactive, so instead of watching someone else solve a problem you solve it yourself, with hints when you get stuck.
+[01:49] The course on how computer networks route packets is the one I'd point you at after this video.
+[01:56] Head to brilliant dot org slash techtangent to try everything free for thirty days, and the first two hundred of you get twenty percent off an annual subscription.
+[02:08] Thanks to both NordVPN and Brilliant for making this video possible.
+[02:12] And a reminder that this whole channel is also funded by you on Patreon, where patrons get the teardown videos a week early.
+[02:20] Okay, let's get the router open.
+[02:23] There are four screws under the rubber feet and two more hidden under the label, which is a bit rude.
+[02:31] Inside, the main board is a single SoC with a separate radio module for the backhaul.
+[02:39] The first thing I noticed is this thermal pad. It's not actually touching the heatsink.
+[02:46] So the radio runs hot, and when it gets hot enough the firmware throttles it, and that's when your connections start dropping.
+[02:55] Why evenings? Because that's when everyone in the house is streaming and the radio is working hardest.
+[03:03] Let me show you the temperature log I captured over three nights.
+[03:08] Every night around seven the backhaul temperature climbs past eighty degrees, and every night around seven the disconnects begin.
+[03:17] The fix is embarrassingly simple: a thicker thermal pad and a small gap filler.
+[03:24] After swapping them, the peak temperature dropped by eighteen degrees and the drops stopped completely.
+[03:31] I've been running it for ten days now without a single disconnect.
+[03:36] If you've got the same router, the exact pad I used is in the description.
+[03:41] If you found this useful, a like helps more people see it, and subscribe if you want the next teardown.
+[03:48] Thanks for watching, and I'll see you in the next one.

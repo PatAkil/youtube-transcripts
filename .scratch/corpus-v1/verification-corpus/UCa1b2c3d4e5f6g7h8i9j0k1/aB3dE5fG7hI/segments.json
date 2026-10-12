@@ -1,0 +1,21 @@
+{
+  "processed": "2026-10-12T20:33:04Z",
+  "segments": [
+    {
+      "sponsor": "NordVPN",
+      "start": 42,
+      "end": 89,
+      "origin": "slot",
+      "slot_index": 0,
+      "opening_line": "This video is sponsored by NordVPN."
+    },
+    {
+      "sponsor": "Brilliant",
+      "start": 89,
+      "end": 132,
+      "origin": "slot",
+      "slot_index": 0,
+      "opening_line": "And a second thank you to Brilliant for also sponsoring this video."
+    }
+  ]
+}
