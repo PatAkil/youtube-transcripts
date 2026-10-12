@@ -179,7 +179,7 @@ func buildOverview(videos []scannedVideo) overview {
 		starts []float64
 	}
 	bySponsor := map[string]map[string]map[string]*videoStarts{}
-	sponsorNames := map[string]string{}
+	sponsorSpellings := map[string]map[string]int{} // key -> spelling -> uses
 	channelNames := map[string]string{}
 	channelSponsorCount := map[string]map[string]int{}
 	awaitingByChannel := map[string]*channelVideos{}
@@ -201,8 +201,12 @@ func buildOverview(videos []scannedVideo) overview {
 			continue
 		}
 		for _, s := range v.Segments.Segments {
-			key := strings.ToLower(strings.TrimSpace(s.Sponsor))
-			sponsorNames[key] = strings.TrimSpace(s.Sponsor)
+			name := strings.TrimSpace(s.Sponsor)
+			key := strings.ToLower(name)
+			if sponsorSpellings[key] == nil {
+				sponsorSpellings[key] = map[string]int{}
+			}
+			sponsorSpellings[key][name]++
 			if bySponsor[key] == nil {
 				bySponsor[key] = map[string]map[string]*videoStarts{}
 			}
@@ -225,6 +229,10 @@ func buildOverview(videos []scannedVideo) overview {
 	ov := overview{channelSet: map[string]bool{}}
 	for chID := range channelNames {
 		ov.channelSet[chID] = true
+	}
+	sponsorNames := map[string]string{}
+	for key, spellings := range sponsorSpellings {
+		sponsorNames[key] = mostFrequent(spellings)
 	}
 
 	for key, channels := range bySponsor {
@@ -281,6 +289,18 @@ func (ov overview) awaitingCount() int {
 		n += len(cv.Videos)
 	}
 	return n
+}
+
+// mostFrequent picks the spelling used most often; a tie goes to the
+// alphabetically first spelling so the choice is stable.
+func mostFrequent(uses map[string]int) string {
+	best, bestN := "", -1
+	for spelling, n := range uses {
+		if n > bestN || (n == bestN && spelling < best) {
+			best, bestN = spelling, n
+		}
+	}
+	return best
 }
 
 // lessName orders display names case-insensitively, falling back to the

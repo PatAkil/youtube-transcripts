@@ -123,3 +123,102 @@ _None._
 		t.Errorf("stdout = %q, want %q", stdout, wantOut)
 	}
 }
+
+func TestOverviewGroupsAcrossChannelsInStableOrder(t *testing.T) {
+	corpusDir := t.TempDir()
+	// Directory names and file order are deliberately out of display order.
+	zed := writeVideoFixture(t, corpusDir, video("UCzzz", "Zed Talks", "zzzzzzzzzz1", "Newer on Zed", "2025-03-01T00:00:00Z"))
+	writeSegmentsFixture(t, zed, processed(segment("Globex", 30, 90), segment("Acme", 400, 460)))
+	zedOld := writeVideoFixture(t, corpusDir, video("UCzzz", "Zed Talks", "zzzzzzzzzz0", "Older on Zed", "2024-06-01T00:00:00Z"))
+	writeSegmentsFixture(t, zedOld, processed(segment("Acme", 65, 120)))
+	alpha := writeVideoFixture(t, corpusDir, video("UCaaa", "alpha channel", "aaaaaaaaaa1", "Alpha one", "2024-01-02T15:04:05Z"))
+	writeSegmentsFixture(t, alpha, processed(segment("Acme", 12, 60)))
+
+	code, stdout, stderr := runOverview(t, corpusDir)
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	want := `# Sponsorship overview
+
+## By Sponsor
+
+### Acme
+
+- alpha channel (UCaaa)
+  - Alpha one (aaaaaaaaaa1): [[00:12]](https://www.youtube.com/watch?v=aaaaaaaaaa1&t=12s)
+- Zed Talks (UCzzz)
+  - Older on Zed (zzzzzzzzzz0): [[01:05]](https://www.youtube.com/watch?v=zzzzzzzzzz0&t=65s)
+  - Newer on Zed (zzzzzzzzzz1): [[06:40]](https://www.youtube.com/watch?v=zzzzzzzzzz1&t=400s)
+
+### Globex
+
+- Zed Talks (UCzzz)
+  - Newer on Zed (zzzzzzzzzz1): [[00:30]](https://www.youtube.com/watch?v=zzzzzzzzzz1&t=30s)
+
+## By Channel
+
+### alpha channel (UCaaa)
+
+- Acme: 1 Segment
+
+### Zed Talks (UCzzz)
+
+- Acme: 2 Segments
+- Globex: 1 Segment
+
+## Awaiting agent pass
+
+_None._
+
+## No transcript
+
+_None._
+`
+	if got := readFile(t, filepath.Join(corpusDir, "overview.md")); got != want {
+		t.Errorf("overview.md =\n%s\nwant\n%s", got, want)
+	}
+	if !strings.HasSuffix(stdout, "sponsors=2  channels=2  awaiting=0\n") {
+		t.Errorf("stdout = %q", stdout)
+	}
+}
+
+func TestOverviewMergesSponsorSpellingsCaseInsensitively(t *testing.T) {
+	corpusDir := t.TempDir()
+	// "NordVPN" twice, " Nordvpn " once, "nordvpn" once (and last in walk
+	// order): one Sponsor, shown as NordVPN.
+	a := writeVideoFixture(t, corpusDir, video("UCaaa", "Alpha", "aaaaaaaaaa1", "A1", "2024-01-01T00:00:00Z"))
+	writeSegmentsFixture(t, a, processed(segment("NordVPN", 10, 70)))
+	b := writeVideoFixture(t, corpusDir, video("UCaaa", "Alpha", "aaaaaaaaaa2", "A2", "2024-02-01T00:00:00Z"))
+	writeSegmentsFixture(t, b, processed(segment("NordVPN", 20, 80)))
+	c := writeVideoFixture(t, corpusDir, video("UCbbb", "Beta", "bbbbbbbbbb1", "B1", "2024-03-01T00:00:00Z"))
+	writeSegmentsFixture(t, c, processed(segment(" Nordvpn ", 30, 90), segment("nordvpn", 500, 560)))
+	// "Squarespace" and "squarespace" once each: a tie, so the alphabetically
+	// first spelling wins even though it is seen first.
+	d := writeVideoFixture(t, corpusDir, video("UCbbb", "Beta", "bbbbbbbbbb2", "B2", "2024-04-01T00:00:00Z"))
+	writeSegmentsFixture(t, d, processed(segment("Squarespace", 5, 50), segment("squarespace", 700, 750)))
+
+	code, stdout, stderr := runOverview(t, corpusDir)
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	got := readFile(t, filepath.Join(corpusDir, "overview.md"))
+	bySponsor := got[:strings.Index(got, "## By Channel")]
+	if n := strings.Count(bySponsor, "\n### "); n != 2 {
+		t.Errorf("By Sponsor has %d Sponsors, want 2:\n%s", n, bySponsor)
+	}
+	for _, want := range []string{"\n### NordVPN\n", "\n### Squarespace\n", "- NordVPN: 2 Segments\n", "- Squarespace: 2 Segments\n"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("overview.md lacks %q:\n%s", want, got)
+		}
+	}
+	for _, unwanted := range []string{"nordvpn", "Nordvpn", "squarespace"} {
+		if strings.Contains(got, unwanted) {
+			t.Errorf("overview.md shows non-canonical spelling %q:\n%s", unwanted, got)
+		}
+	}
+	if !strings.HasSuffix(stdout, "sponsors=2  channels=2  awaiting=0\n") {
+		t.Errorf("stdout = %q", stdout)
+	}
+}
