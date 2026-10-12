@@ -23,7 +23,9 @@ Walks every Channel directory and every Video directory beneath it, reads
 video.json and segments.json, and writes <corpus>/overview.md with four
 sections: By Sponsor (Sponsor -> Channel -> Videos with Segment start times),
 By Channel (Channel -> Sponsor -> Segment count), Awaiting agent pass (Videos
-with no segments.json yet) and No transcript (Videos with transcript "none").
+with no segments.json yet) and No transcript (Videos with transcript "none";
+these are not counted as awaiting, since there is nothing for the agent to
+read). Each Segment start is a [mm:ss] link into the Video at that second.
 
 A video.json or segments.json that fails to parse is named on stderr and
 skipped; the overview is still written and the exit code stays 0. The output

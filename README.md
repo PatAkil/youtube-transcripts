@@ -26,7 +26,7 @@ youtube-transcripts [--corpus DIR] <command> [arguments]
 | ---------- | ----------------------------------------------------------------------------------- |
 | `fetch`    | Store one Video's Transcript and metadata in the Corpus. Takes a video ID or any YouTube URL (watch, youtu.be, shorts, embed). `--force` refetches a Video already present. |
 | `sync`     | Fetch new Videos from every Followed Channel. _Coming._                              |
-| `overview` | Write the Sponsorship overview from the Segments files. _Coming._                   |
+| `overview` | Write the Sponsorship overview to `<corpus>/overview.md` from every `segments.json`: By Sponsor, By Channel, Awaiting agent pass, No transcript. Idempotent. |
 
 The global `--corpus DIR` flag sets the Corpus root. It defaults to `corpus`,
 relative to the working directory, so running from the repo root uses
@@ -35,22 +35,30 @@ relative to the working directory, so running from the repo root uses
 ```sh
 ./youtube-transcripts fetch https://www.youtube.com/watch?v=dQw4w9WgXcQ
 ./youtube-transcripts --corpus /tmp/scratch fetch dQw4w9WgXcQ --force
+./youtube-transcripts overview
 ```
 
 ## Corpus layout
 
 One directory per Channel (named by YouTube channel ID), holding one directory
-per Video (named by YouTube video ID). `fetch` writes:
+per Video (named by YouTube video ID):
 
 ```
 corpus/
+  overview.md           # the Sponsorship overview; written by overview only
   <channelID>/
     <videoID>/
       video.json        # video_id, channel_id, channel_name, title, published,
                         # fetched, transcript ("ok" | "none"), track ("manual" | "auto" | "")
       transcript.txt    # one cue per line: "[mm:ss] text", "[h:mm:ss]" from one hour on;
                         # absent when transcript is "none"
+      segments.json     # the Video's Sponsor Segments, written by the agent pass only;
+                        # schema in docs/segments-file.md
 ```
+
+`fetch` writes `video.json` and `transcript.txt`. The agent pass writes
+`segments.json` ([schema](docs/segments-file.md)); a Video without one is the
+agent-pass backlog that `overview` lists.
 
 A Video with no English track is still recorded (`"transcript": "none"`) so it
 is not retried by accident. Fetching a Video that is already present is a no-op
