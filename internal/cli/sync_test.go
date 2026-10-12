@@ -291,3 +291,29 @@ func TestSyncRejectsUnexpectedArgument(t *testing.T) {
 		t.Errorf("exit %d, stderr %q; want 1 naming the argument", code, stderr)
 	}
 }
+
+func TestSyncTreatsVideoUnderAnotherChannelDirectoryAsPresent(t *testing.T) {
+	corpusDir := t.TempDir()
+	writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), twoFollowedChannels)
+	// Video ccccccccccc belongs to UCdef456 in the feed, but it was fetched
+	// by hand earlier and sits under another Channel directory.
+	strayDir := filepath.Join(corpusDir, "UCstray", "ccccccccccc")
+	writeFile(t, filepath.Join(strayDir, "video.json"), "{}\n")
+	fake := twoChannelFake()
+
+	code, stdout, stderr := runSync(t, corpusDir, fake)
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	assertSummary(t, stdout, 2, 3, 1, 0)
+	if strings.Contains(stdout, "ccccccccccc  Other Channel") {
+		t.Errorf("stray Video was refetched:\n%s", stdout)
+	}
+	if _, err := os.Stat(filepath.Join(corpusDir, "UCdef456", "ccccccccccc")); !os.IsNotExist(err) {
+		t.Error("stray Video was fetched again under its feed Channel directory")
+	}
+	if got := readFile(t, filepath.Join(strayDir, "video.json")); got != "{}\n" {
+		t.Errorf("stray Video's files were rewritten: %q", got)
+	}
+}
