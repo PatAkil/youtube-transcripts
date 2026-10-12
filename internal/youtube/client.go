@@ -1,6 +1,7 @@
 package youtube
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"encoding/xml"
@@ -17,7 +18,8 @@ import (
 )
 
 // HTTPClient is the key-free YouTube implementation. It reads the public
-// watch page the web player loads and the track URL that page points at.
+// watch page the web player loads and the track URL that page points at,
+// falling back to the Android app's player API when that URL answers empty.
 type HTTPClient struct {
 	http *http.Client
 }
@@ -35,7 +37,15 @@ func NewClient(httpClient *http.Client) *HTTPClient {
 const (
 	watchURL  = "https://www.youtube.com/watch"
 	feedURL   = "https://www.youtube.com/feeds/videos.xml"
+	playerURL = "https://www.youtube.com/youtubei/v1/player"
 	userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0 Safari/537.36"
+
+	// The Android app's player API client. Track URLs handed to the web
+	// player now need a proof-of-origin token and answer an empty body
+	// without one; the Android client's track URLs do not.
+	androidClientName    = "ANDROID"
+	androidClientVersion = "20.10.38"
+	androidUserAgent     = "com.google.android.youtube/" + androidClientVersion + " (Linux; U; Android 11) gzip"
 )
 
 // ListNewestVideos reads the Channel's public Atom feed, which lists its
@@ -125,12 +135,77 @@ func (c *HTTPClient) FetchTranscript(ctx context.Context, videoID string) (Trans
 	if err != nil {
 		return Transcript{}, fmt.Errorf("youtube: %s: track download: %w", videoID, err)
 	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		// The web player's track URL needs a proof-of-origin token we do
+		// not have; the Android client's track URL for the same Video
+		// does not.
+		body, err = c.androidTrack(ctx, videoID)
+		if err != nil {
+			return Transcript{}, fmt.Errorf("youtube: %s: %w", videoID, err)
+		}
+	}
 	cues, err := parseTimedText(body)
 	if err != nil {
 		return Transcript{}, fmt.Errorf("youtube: %s: track: %w", videoID, err)
 	}
 	tr.Cues = cues
 	return tr, nil
+}
+
+// androidTrack asks the player API as the Android app for the Video and
+// downloads its English track. It is the fallback for a web track URL that
+// answers an empty body.
+func (c *HTTPClient) androidTrack(ctx context.Context, videoID string) ([]byte, error) {
+	reqBody, err := json.Marshal(map[string]any{
+		"context": map[string]any{
+			"client": map[string]any{
+				"clientName":        androidClientName,
+				"clientVersion":     androidClientVersion,
+				"androidSdkVersion": 30,
+				"userAgent":         androidUserAgent,
+				"hl":                "en",
+				"gl":                "US",
+			},
+		},
+		"videoId":        videoID,
+		"contentCheckOk": true,
+		"racyCheckOk":    true,
+	})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, playerURL+"?prettyPrint=false", bytes.NewReader(reqBody))
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("User-Agent", androidUserAgent)
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-YouTube-Client-Name", "3")
+	req.Header.Set("X-YouTube-Client-Version", androidClientVersion)
+	resp, err := c.http.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("player API: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("player API: HTTP %d", resp.StatusCode)
+	}
+	var pr playerResponse
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 32<<20)).Decode(&pr); err != nil {
+		return nil, fmt.Errorf("player API: decode: %w", err)
+	}
+	track, kind := pr.englishTrack()
+	if kind == TrackNone {
+		return nil, errors.New("player API lists no English track although the watch page does")
+	}
+	body, err := c.get(ctx, track.BaseURL)
+	if err != nil {
+		return nil, fmt.Errorf("track download: %w", err)
+	}
+	if len(bytes.TrimSpace(body)) == 0 {
+		return nil, errors.New("track URL answered an empty body for both the web and the Android client (YouTube may have changed its track route)")
+	}
+	return body, nil
 }
 
 func (c *HTTPClient) get(ctx context.Context, rawURL string) ([]byte, error) {

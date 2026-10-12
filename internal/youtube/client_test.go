@@ -2,6 +2,7 @@ package youtube
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -28,8 +29,13 @@ type fakeYouTube struct {
 	watchPages map[string]string // video ID -> fixture file for /watch
 	timedText  map[string]string // lang -> fixture file for /api/timedtext
 	feeds      map[string]string // channel ID -> fixture file for /feeds/videos.xml
+	player     map[string]string // video ID -> fixture file for POST /youtubei/v1/player
 	watchCode  int
 	feedCode   int
+	// webTrackEmpty makes /api/timedtext answer 200 with an empty body
+	// unless the request carries client=android, as YouTube does for a
+	// web track URL without a proof-of-origin token.
+	webTrackEmpty bool
 }
 
 func newTestClient(t *testing.T, fy fakeYouTube) *HTTPClient {
@@ -58,7 +64,28 @@ func newTestClient(t *testing.T, fy fakeYouTube) *HTTPClient {
 				return
 			}
 			serveFixture(t, w, fixture)
+		case "/youtubei/v1/player":
+			var body struct {
+				VideoID string `json:"videoId"`
+				Context struct {
+					Client struct{ ClientName string } `json:"client"`
+				} `json:"context"`
+			}
+			if r.Method != http.MethodPost || json.NewDecoder(r.Body).Decode(&body) != nil || body.Context.Client.ClientName != "ANDROID" {
+				http.Error(w, "want a POST with an ANDROID client context", http.StatusBadRequest)
+				return
+			}
+			fixture, ok := fy.player[body.VideoID]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			serveFixture(t, w, fixture)
 		case "/api/timedtext":
+			if fy.webTrackEmpty && r.URL.Query().Get("client") != "android" {
+				w.WriteHeader(http.StatusOK)
+				return
+			}
 			fixture, ok := fy.timedText[r.URL.Query().Get("lang")]
 			if !ok {
 				http.NotFound(w, r)
@@ -174,6 +201,40 @@ func TestHTTPClientErrorsWhenTrackDownloadFails(t *testing.T) {
 	_, err := c.FetchTranscript(context.Background(), "dQw4w9WgXcQ")
 	if err == nil {
 		t.Error("want an error when the track URL answers 404")
+	}
+}
+
+func TestHTTPClientFallsBackToAndroidClientWhenWebTrackIsEmpty(t *testing.T) {
+	c := newTestClient(t, fakeYouTube{
+		watchPages:    map[string]string{"dQw4w9WgXcQ": "watch_tracks.html"},
+		player:        map[string]string{"dQw4w9WgXcQ": "player_android.json"},
+		timedText:     map[string]string{"en-GB": "timedtext_en-GB.xml"},
+		webTrackEmpty: true,
+	})
+	tr, err := c.FetchTranscript(context.Background(), "dQw4w9WgXcQ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tr.Track != TrackManual {
+		t.Errorf("track = %q, want manual", tr.Track)
+	}
+	if len(tr.Cues) != 3 || tr.Cues[0].Text != "hello and welcome" {
+		t.Errorf("cues = %+v, want the three cues of timedtext_en-GB.xml", tr.Cues)
+	}
+}
+
+func TestHTTPClientErrorsWhenBothTrackURLsAreEmpty(t *testing.T) {
+	c := newTestClient(t, fakeYouTube{
+		watchPages:    map[string]string{"dQw4w9WgXcQ": "watch_tracks.html"},
+		player:        map[string]string{"dQw4w9WgXcQ": "player_android.json"},
+		webTrackEmpty: true, // and no en-GB fixture, so the Android URL 404s
+	})
+	_, err := c.FetchTranscript(context.Background(), "dQw4w9WgXcQ")
+	if err == nil {
+		t.Fatal("want an error when the Android track cannot be downloaded either")
+	}
+	if !strings.Contains(err.Error(), "track download") {
+		t.Errorf("error = %v, want it to name the track download", err)
 	}
 }
 
