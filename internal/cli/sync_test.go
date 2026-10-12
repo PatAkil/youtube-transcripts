@@ -220,3 +220,74 @@ func corpusVideoDir(corpusDir, videoID string) (string, error) {
 	}
 	return filepath.Dir(matches[0]), nil
 }
+
+func TestSyncExitsOneWhenEveryChannelFails(t *testing.T) {
+	corpusDir := t.TempDir()
+	writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), twoFollowedChannels)
+	fake := twoChannelFake()
+	fake.Errors["UCabc123"] = errors.New("HTTP 404")
+	fake.Errors["UCdef456"] = errors.New("HTTP 503")
+
+	code, stdout, stderr := runSync(t, corpusDir, fake)
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1 when every Channel failed", code)
+	}
+	assertSummary(t, stdout, 0, 0, 0, 0)
+	if !strings.Contains(stdout, "failed channels: Example Channel (UCabc123), Other Channel (UCdef456)") {
+		t.Errorf("summary does not name both failed Channels:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "HTTP 404") || !strings.Contains(stderr, "HTTP 503") {
+		t.Errorf("stderr lacks the feed errors: %q", stderr)
+	}
+}
+
+func TestSyncReportsMissingOrEmptyFollowedChannelsFile(t *testing.T) {
+	tests := []struct {
+		name    string
+		content string // "" means no file
+	}{
+		{name: "missing file"},
+		{name: "empty list", content: "[]\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			corpusDir := t.TempDir()
+			if tt.content != "" {
+				writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), tt.content)
+			}
+			fake := twoChannelFake()
+
+			code, _, stderr := runSync(t, corpusDir, fake)
+
+			if code != 1 {
+				t.Errorf("exit %d, want 1", code)
+			}
+			if !strings.Contains(stderr, "followed-channels.json") {
+				t.Errorf("stderr does not name the Followed Channels file: %q", stderr)
+			}
+			if fake.Calls != 0 {
+				t.Errorf("YouTube was called %d times, want 0", fake.Calls)
+			}
+		})
+	}
+}
+
+func TestSyncHelp(t *testing.T) {
+	code, stdout, stderr := runSync(t, t.TempDir(), &youtube.Fake{}, "--help")
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	for _, want := range []string{"sync", "Followed Channel", "followed-channels.json", "already present", "--help"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("sync help lacks %q:\n%s", want, stdout)
+		}
+	}
+}
+
+func TestSyncRejectsUnexpectedArgument(t *testing.T) {
+	code, _, stderr := runSync(t, t.TempDir(), &youtube.Fake{}, "UCabc123")
+	if code != 1 || !strings.Contains(stderr, "UCabc123") {
+		t.Errorf("exit %d, stderr %q; want 1 naming the argument", code, stderr)
+	}
+}

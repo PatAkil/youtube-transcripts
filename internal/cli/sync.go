@@ -84,5 +84,9 @@ func Sync(ctx context.Context, deps Deps, corpusDir string, args []string, stdou
 	if len(failedVideos) > 0 {
 		fmt.Fprintf(stdout, "failed videos: %s\n", strings.Join(failedVideos, ", "))
 	}
+	if walked == 0 {
+		fmt.Fprintln(stderr, "sync: every Followed Channel failed")
+		return 1
+	}
 	return 0
 }
