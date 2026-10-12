@@ -25,7 +25,7 @@ func TestRunHelpListsSubcommandsAndCorpusFlag(t *testing.T) {
 		if code != 0 {
 			t.Errorf("%v: exit %d, stderr %q", args, code, stderr)
 		}
-		for _, want := range []string{"fetch", "sync", "overview", "--corpus", "corpus"} {
+		for _, want := range []string{"fetch", "sync", "overview", "--corpus", "corpus", "Sponsor Slots"} {
 			if !strings.Contains(stdout, want) {
 				t.Errorf("%v: help output lacks %q:\n%s", args, want, stdout)
 			}
@@ -52,7 +52,7 @@ func TestRunFetchHelp(t *testing.T) {
 	if code != 0 {
 		t.Errorf("exit %d, want 0", code)
 	}
-	for _, want := range []string{"fetch", "--force", "video ID", "URL", "Transcript"} {
+	for _, want := range []string{"fetch", "--force", "video ID", "URL", "Transcript", "Sponsor Slots", "slots.json", "SponsorBlock"} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("fetch help lacks %q:\n%s", want, stdout)
 		}

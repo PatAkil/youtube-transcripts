@@ -10,7 +10,7 @@ import (
 	"github.com/PatAkil/youtube-transcripts/internal/youtube"
 )
 
-const fetchUsage = `Store one Video's Transcript and metadata in the Corpus.
+const fetchUsage = `Store one Video's Transcript, metadata and Sponsor Slots in the Corpus.
 
 Usage:
   youtube-transcripts [--corpus DIR] fetch [--force] <video ID or URL>
@@ -19,7 +19,10 @@ The Video may be given as a bare YouTube video ID or as a watch, youtu.be,
 shorts or embed URL. The Transcript comes from the Video's English track
 (a manual track is preferred over an auto-generated one) and is written as
 timestamped text under <corpus>/<channel ID>/<video ID>/, next to video.json.
-A Video with no English track is recorded with transcript "none".
+A Video with no English track is recorded with transcript "none". The
+Sponsor Slots come from SponsorBlock's "sponsor" category, merged where they
+overlap, and are written to slots.json in the same directory; a Video
+SponsorBlock has no data on gets an empty Slots list.
 
 A Video already in the Corpus is skipped unless --force is given, which
 refetches it. A segments.json written by the agent pass is never touched.

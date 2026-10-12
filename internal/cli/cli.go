@@ -31,7 +31,7 @@ Usage:
   youtube-transcripts [--corpus DIR] <command> [arguments]
 
 Commands:
-  fetch     Store one Video's Transcript and metadata in the Corpus
+  fetch     Store one Video's Transcript, metadata and Sponsor Slots in the Corpus
   sync      Fetch new Videos from every Followed Channel
   overview  Write the Sponsorship overview from the Segments files
 
