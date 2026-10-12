@@ -39,14 +39,17 @@ func Fetch(ctx context.Context, deps Deps, corpusDir string, args []string, stdo
 		Transcript:  corpus.TranscriptOK,
 		Track:       string(tr.Track),
 	}
+	if tr.Track == youtube.TrackNone {
+		video.Transcript = corpus.TranscriptNone
+	}
 	videoJSON, err := corpus.MarshalJSON(video)
 	if err != nil {
 		fmt.Fprintf(stderr, "fetch %s: %v\n", videoID, err)
 		return 1
 	}
-	files := map[string][]byte{
-		corpus.VideoFile:      videoJSON,
-		corpus.TranscriptFile: []byte(renderTranscript(tr.Cues)),
+	files := map[string][]byte{corpus.VideoFile: videoJSON}
+	if tr.Track != youtube.TrackNone {
+		files[corpus.TranscriptFile] = []byte(renderTranscript(tr.Cues))
 	}
 	if err := corpus.WriteVideoDir(corpusDir, video.ChannelID, video.VideoID, files, nil); err != nil {
 		fmt.Fprintf(stderr, "fetch %s: %v\n", videoID, err)

@@ -112,3 +112,53 @@ func entries(t *testing.T, dir string) []string {
 }
 
 var _ = strings.Join
+
+func TestFetchRecordsAutoTrack(t *testing.T) {
+	corpusDir := t.TempDir()
+	tr := manualTranscript()
+	tr.Track = youtube.TrackAuto
+	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": tr}}
+
+	code, stdout, stderr := runFetch(t, corpusDir, fake, "dQw4w9WgXcQ")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	videoDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
+	video := decodeVideo(t, filepath.Join(videoDir, "video.json"))
+	if video["track"] != "auto" || video["transcript"] != "ok" {
+		t.Errorf("video.json track=%v transcript=%v, want auto/ok", video["track"], video["transcript"])
+	}
+	if !strings.Contains(readFile(t, filepath.Join(videoDir, "transcript.txt")), "[00:12] this video is sponsored by Acme") {
+		t.Error("transcript.txt is missing the auto-track cues")
+	}
+	if !strings.HasSuffix(stdout, "lines=3\n") {
+		t.Errorf("stdout = %q, want it to end with lines=3", stdout)
+	}
+}
+
+func TestFetchWithNoEnglishTrackWritesVideoFileOnly(t *testing.T) {
+	corpusDir := t.TempDir()
+	tr := manualTranscript()
+	tr.Track = youtube.TrackNone
+	tr.Cues = nil
+	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": tr}}
+
+	code, stdout, stderr := runFetch(t, corpusDir, fake, "dQw4w9WgXcQ")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	videoDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
+	if got := entries(t, videoDir); len(got) != 1 || got[0] != "video.json" {
+		t.Errorf("video directory holds %v, want only video.json", got)
+	}
+	video := decodeVideo(t, filepath.Join(videoDir, "video.json"))
+	if video["transcript"] != "none" || video["track"] != "" {
+		t.Errorf("video.json transcript=%v track=%v, want none/\"\"", video["transcript"], video["track"])
+	}
+	wantLine := "dQw4w9WgXcQ  Example Channel  An example video  lines=0\n"
+	if stdout != wantLine {
+		t.Errorf("stdout = %q, want %q", stdout, wantLine)
+	}
+}
