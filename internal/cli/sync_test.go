@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PatAkil/youtube-transcripts/internal/sponsorblock"
 	"github.com/PatAkil/youtube-transcripts/internal/youtube"
 )
 
@@ -67,7 +68,7 @@ func twoChannelFake() *youtube.Fake {
 func runSync(t *testing.T, corpusDir string, fake *youtube.Fake, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	deps := Deps{YouTube: fake, Now: func() time.Time { return fixedNow }}
+	deps := Deps{YouTube: fake, SponsorBlock: &sponsorblock.Fake{}, Now: func() time.Time { return fixedNow }}
 	code = Sync(context.Background(), deps, corpusDir, args, &out, &errOut)
 	return code, out.String(), errOut.String()
 }
@@ -98,10 +99,10 @@ func TestSyncFetchesNewVideosOfEveryFollowedChannel(t *testing.T) {
 	}
 
 	for _, want := range []string{
-		"aaaaaaaaaaa  Example Channel  First example  lines=2\n",
-		"bbbbbbbbbbb  Example Channel  Second example  lines=2\n",
-		"ccccccccccc  Other Channel  First other  lines=2\n",
-		"ddddddddddd  Other Channel  Second other  lines=2\n",
+		"aaaaaaaaaaa  Example Channel  First example  lines=2  slots=0\n",
+		"bbbbbbbbbbb  Example Channel  Second example  lines=2  slots=0\n",
+		"ccccccccccc  Other Channel  First other  lines=2  slots=0\n",
+		"ddddddddddd  Other Channel  Second other  lines=2  slots=0\n",
 	} {
 		if !strings.Contains(stdout, want) {
 			t.Errorf("stdout lacks %q:\n%s", want, stdout)
