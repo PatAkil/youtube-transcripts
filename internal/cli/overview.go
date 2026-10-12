@@ -63,7 +63,7 @@ func Overview(ctx context.Context, deps Deps, corpusDir string, args []string, s
 		fmt.Fprintf(stderr, "overview: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "wrote %s  sponsors=%d  channels=%d  awaiting=%d\n", path, len(ov.sponsors), len(ov.channelSet), ov.awaitingCount())
+	fmt.Fprintf(stdout, "wrote %s  sponsors=%d  channels=%d  awaiting=%d\n", path, len(ov.sponsors), len(ov.channels), ov.awaitingCount())
 	return 0
 }
 
@@ -140,11 +140,10 @@ func readVideoDir(videoDir string) (scannedVideo, error) {
 
 // overview is the grouped, sorted content of overview.md.
 type overview struct {
-	sponsors   []*sponsorEntry
-	channels   []*channelEntry
-	awaiting   []*channelVideos // Videos with no segments.json, by Channel
-	noTranscr  []videoRef       // Videos with transcript "none"
-	channelSet map[string]bool  // every Channel seen in the Corpus
+	sponsors     []*sponsorEntry
+	channels     []*channelEntry  // Channels with at least one Segment
+	awaiting     []*channelVideos // Videos with no segments.json, by Channel
+	noTranscript []videoRef       // Videos with transcript "none"
 }
 
 type sponsorEntry struct {
@@ -233,10 +232,7 @@ func buildOverview(videos []scannedVideo) overview {
 		}
 	}
 
-	ov := overview{channelSet: map[string]bool{}}
-	for chID := range channelNames {
-		ov.channelSet[chID] = true
-	}
+	var ov overview
 	sponsorNames := map[string]string{}
 	for key, spellings := range sponsorSpellings {
 		sponsorNames[key] = mostFrequent(spellings)
@@ -286,7 +282,7 @@ func buildOverview(videos []scannedVideo) overview {
 	sortChannelVideos(ov.awaiting)
 
 	sortVideoRefs(noTranscript)
-	ov.noTranscr = noTranscript
+	ov.noTranscript = noTranscript
 	return ov
 }
 
@@ -381,10 +377,10 @@ func (ov overview) render() string {
 	}
 
 	b.WriteString("\n## No transcript\n\n")
-	if len(ov.noTranscr) == 0 {
+	if len(ov.noTranscript) == 0 {
 		b.WriteString("_None._\n")
 	}
-	for _, v := range ov.noTranscr {
+	for _, v := range ov.noTranscript {
 		fmt.Fprintf(&b, "- %s: %s\n", channelLabel(v.Meta.ChannelID, v.Meta.ChannelName), videoLabel(v.Meta))
 	}
 	return b.String()

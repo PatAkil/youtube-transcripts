@@ -296,7 +296,9 @@ _None._
 	if got := readFile(t, filepath.Join(corpusDir, "overview.md")); got != want {
 		t.Errorf("overview.md =\n%s\nwant\n%s", got, want)
 	}
-	if !strings.HasSuffix(stdout, "sponsors=0  channels=2  awaiting=3\n") {
+	// channels= counts the Channels listed under By Channel, so it matches
+	// the section: none here, since no Channel has a Segment yet.
+	if !strings.HasSuffix(stdout, "sponsors=0  channels=0  awaiting=3\n") {
 		t.Errorf("stdout = %q", stdout)
 	}
 }
