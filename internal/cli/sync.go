@@ -50,7 +50,7 @@ func Sync(ctx context.Context, deps Deps, corpusDir string, args []string, stdou
 	}
 
 	var walked, fetched, skipped, failed int
-	var failedChannels []string
+	var failedChannels, failedVideos []string
 	for _, ch := range channels {
 		videos, err := deps.YouTube.ListNewestVideos(ctx, ch.ChannelID)
 		if err != nil {
@@ -62,6 +62,8 @@ func Sync(ctx context.Context, deps Deps, corpusDir string, args []string, stdou
 		for _, v := range videos {
 			res, err := fetchVideo(ctx, deps, corpusDir, v.VideoID, false)
 			if err != nil {
+				fmt.Fprintf(stderr, "sync: video %s (%s): %v\n", v.VideoID, ch.Name, err)
+				failedVideos = append(failedVideos, fmt.Sprintf("%s (%s)", v.VideoID, ch.Name))
 				failed++
 				continue
 			}
@@ -78,6 +80,9 @@ func Sync(ctx context.Context, deps Deps, corpusDir string, args []string, stdou
 		walked, fetched, skipped, failed)
 	if len(failedChannels) > 0 {
 		fmt.Fprintf(stdout, "failed channels: %s\n", strings.Join(failedChannels, ", "))
+	}
+	if len(failedVideos) > 0 {
+		fmt.Fprintf(stdout, "failed videos: %s\n", strings.Join(failedVideos, ", "))
 	}
 	return 0
 }

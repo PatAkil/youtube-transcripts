@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -178,4 +179,44 @@ func TestSyncContinuesPastChannelWhoseFeedFails(t *testing.T) {
 	if !strings.Contains(stderr, "UCabc123") || !strings.Contains(stderr, "HTTP 404") {
 		t.Errorf("stderr lacks the Channel and its feed error: %q", stderr)
 	}
+}
+
+func TestSyncContinuesPastVideoWhoseFetchFails(t *testing.T) {
+	corpusDir := t.TempDir()
+	writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), twoFollowedChannels)
+	fake := twoChannelFake()
+	fake.Errors["bbbbbbbbbbb"] = errors.New("track download: HTTP 500")
+
+	code, stdout, stderr := runSync(t, corpusDir, fake)
+
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	for _, id := range []string{"aaaaaaaaaaa", "ccccccccccc", "ddddddddddd"} {
+		if _, err := corpusVideoDir(corpusDir, id); err != nil {
+			t.Errorf("Video %s not fetched: %v", id, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(corpusDir, "UCabc123", "bbbbbbbbbbb")); !os.IsNotExist(err) {
+		t.Error("a directory was left behind for the Video whose fetch failed")
+	}
+	assertSummary(t, stdout, 2, 3, 0, 1)
+	if !strings.Contains(stdout, "failed videos: bbbbbbbbbbb (Example Channel)") {
+		t.Errorf("summary does not name the failed Video:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "bbbbbbbbbbb") || !strings.Contains(stderr, "HTTP 500") {
+		t.Errorf("stderr lacks the Video and its error: %q", stderr)
+	}
+}
+
+// corpusVideoDir finds the Video's directory under any Channel directory.
+func corpusVideoDir(corpusDir, videoID string) (string, error) {
+	matches, err := filepath.Glob(filepath.Join(corpusDir, "*", videoID, "video.json"))
+	if err != nil {
+		return "", err
+	}
+	if len(matches) != 1 {
+		return "", fmt.Errorf("found %d video.json for %s, want 1", len(matches), videoID)
+	}
+	return filepath.Dir(matches[0]), nil
 }
