@@ -1,0 +1,3 @@
+interface:
+  display_name: "Agent pass"
+  short_description: "Name the Sponsors in a Video's Transcript and write its segments.json"

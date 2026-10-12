@@ -27,6 +27,7 @@ youtube-transcripts [--corpus DIR] <command> [arguments]
 | ---------- | ----------------------------------------------------------------------------------- |
 | `fetch`    | Store one Video's Transcript, metadata and Sponsor Slots in the Corpus. Takes a video ID or any YouTube URL (watch, youtu.be, shorts, embed). `--force` refetches a Video already present. |
 | `sync`     | Fetch new Videos from every Followed Channel listed in `corpus/followed-channels.json`. Videos already present are skipped; a failing Channel or Video is named in the closing summary and the run continues. |
+| agent pass | Not a CLI command: the `agent-pass` skill in `.claude/skills/agent-pass/` reads a Video's Slots and Transcript, names each Sponsor and writes `segments.json`. Run it for one video ID or for every Video still in the backlog, after `fetch`/`sync` and before `overview`. |
 | `overview` | Write the Sponsorship overview to `<corpus>/overview.md` from every `segments.json`: By Sponsor, By Channel, Awaiting agent pass, No transcript. Idempotent. |
 
 The global `--corpus DIR` flag sets the Corpus root. It defaults to `corpus`,
