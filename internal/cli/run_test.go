@@ -170,10 +170,3 @@ func TestRunSyncUsesCorpusFlag(t *testing.T) {
 		t.Errorf("transcript not written under --corpus directory: %v", err)
 	}
 }
-
-func TestRunOverviewIsNotAvailableYet(t *testing.T) {
-	code, _, stderr := runCLI(t, &youtube.Fake{}, "overview")
-	if code != 1 || !strings.Contains(stderr, "overview") {
-		t.Errorf("overview: exit %d, stderr %q; want 1 and a message naming it", code, stderr)
-	}
-}
