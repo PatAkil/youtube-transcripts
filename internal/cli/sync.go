@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/PatAkil/youtube-transcripts/internal/corpus"
 )
@@ -49,9 +50,12 @@ func Sync(ctx context.Context, deps Deps, corpusDir string, args []string, stdou
 	}
 
 	var walked, fetched, skipped, failed int
+	var failedChannels []string
 	for _, ch := range channels {
 		videos, err := deps.YouTube.ListNewestVideos(ctx, ch.ChannelID)
 		if err != nil {
+			fmt.Fprintf(stderr, "sync: channel %s (%s): %v\n", ch.Name, ch.ChannelID, err)
+			failedChannels = append(failedChannels, fmt.Sprintf("%s (%s)", ch.Name, ch.ChannelID))
 			continue
 		}
 		walked++
@@ -72,5 +76,8 @@ func Sync(ctx context.Context, deps Deps, corpusDir string, args []string, stdou
 
 	fmt.Fprintf(stdout, "\nchannels walked: %d\nvideos fetched: %d\nvideos skipped (already present): %d\nvideos failed: %d\n",
 		walked, fetched, skipped, failed)
+	if len(failedChannels) > 0 {
+		fmt.Fprintf(stdout, "failed channels: %s\n", strings.Join(failedChannels, ", "))
+	}
 	return 0
 }

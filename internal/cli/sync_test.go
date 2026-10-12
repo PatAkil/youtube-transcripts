@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -120,5 +121,61 @@ func assertSummary(t *testing.T, stdout string, walked, fetched, skipped, failed
 		if !strings.Contains(stdout, want) {
 			t.Errorf("summary lacks %q:\n%s", want, stdout)
 		}
+	}
+}
+
+func TestSyncSecondRunSkipsEverythingAlreadyPresent(t *testing.T) {
+	corpusDir := t.TempDir()
+	writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), twoFollowedChannels)
+	fake := twoChannelFake()
+	if code, _, stderr := runSync(t, corpusDir, fake); code != 0 {
+		t.Fatalf("first run: exit %d, stderr %q", code, stderr)
+	}
+	// Mark the stored files so a refetch would be visible.
+	marker := filepath.Join(corpusDir, "UCabc123", "aaaaaaaaaaa", "video.json")
+	writeFile(t, marker, "{\"marker\": true}\n")
+	fake.Calls = 0
+
+	code, stdout, stderr := runSync(t, corpusDir, fake)
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("second run: exit %d, stderr %q", code, stderr)
+	}
+	if strings.Contains(stdout, "lines=") {
+		t.Errorf("second run printed a fetched Video:\n%s", stdout)
+	}
+	assertSummary(t, stdout, 2, 0, 4, 0)
+	if got := readFile(t, marker); got != "{\"marker\": true}\n" {
+		t.Errorf("already present Video was rewritten: %q", got)
+	}
+	// Only the two feed listings reach YouTube; no Transcript is refetched.
+	if fake.Calls != 2 {
+		t.Errorf("YouTube was called %d times on the second run, want 2 (one feed per Channel)", fake.Calls)
+	}
+}
+
+func TestSyncContinuesPastChannelWhoseFeedFails(t *testing.T) {
+	corpusDir := t.TempDir()
+	writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), twoFollowedChannels)
+	fake := twoChannelFake()
+	fake.Errors["UCabc123"] = errors.New("HTTP 404")
+
+	code, stdout, stderr := runSync(t, corpusDir, fake)
+
+	if code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if _, err := os.Stat(filepath.Join(corpusDir, "UCdef456", "ddddddddddd", "video.json")); err != nil {
+		t.Errorf("other Channel's Video not fetched: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(corpusDir, "UCabc123")); !os.IsNotExist(err) {
+		t.Error("a directory was created for the Channel whose feed failed")
+	}
+	assertSummary(t, stdout, 1, 2, 0, 0)
+	if !strings.Contains(stdout, "failed channels: Example Channel (UCabc123)") {
+		t.Errorf("summary does not name the failed Channel:\n%s", stdout)
+	}
+	if !strings.Contains(stderr, "UCabc123") || !strings.Contains(stderr, "HTTP 404") {
+		t.Errorf("stderr lacks the Channel and its feed error: %q", stderr)
 	}
 }
