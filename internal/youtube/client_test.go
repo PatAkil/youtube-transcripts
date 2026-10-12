@@ -284,3 +284,34 @@ func TestLiveListNewestVideos(t *testing.T) {
 		}
 	}
 }
+
+// A video ID that never went through ParseVideoID (sync passes feed IDs
+// straight through) must be query-escaped, so the ID the server reads back
+// is the one asked for and nothing else rides along in the query string.
+func TestHTTPClientEscapesIDsInRequestURLs(t *testing.T) {
+	hostileVideo := "abc&hl=xx#frag"
+	hostileChannel := "UC/evil?x=1"
+	var gotV, gotChannel string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/watch":
+			gotV = r.URL.Query().Get("v")
+		case "/feeds/videos.xml":
+			gotChannel = r.URL.Query().Get("channel_id")
+		}
+		http.NotFound(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	target, _ := url.Parse(srv.URL)
+	c := NewClient(&http.Client{Transport: rewriteTransport{target: target}})
+
+	_, _ = c.FetchTranscript(context.Background(), hostileVideo)
+	_, _ = c.ListNewestVideos(context.Background(), hostileChannel)
+
+	if gotV != hostileVideo {
+		t.Errorf("server read v=%q, want %q", gotV, hostileVideo)
+	}
+	if gotChannel != hostileChannel {
+		t.Errorf("server read channel_id=%q, want %q", gotChannel, hostileChannel)
+	}
+}

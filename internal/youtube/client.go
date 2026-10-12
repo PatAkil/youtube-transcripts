@@ -41,7 +41,8 @@ const (
 // ListNewestVideos reads the Channel's public Atom feed, which lists its
 // newest ~15 Videos. A mistyped channel ID answers 404 and is an error.
 func (c *HTTPClient) ListNewestVideos(ctx context.Context, channelID string) ([]VideoMeta, error) {
-	body, err := c.get(ctx, feedURL+"?channel_id="+url.QueryEscape(channelID))
+	q := url.Values{"channel_id": {channelID}}
+	body, err := c.get(ctx, feedURL+"?"+q.Encode())
 	if err != nil {
 		return nil, fmt.Errorf("youtube: channel %s feed: %w", channelID, err)
 	}
@@ -99,7 +100,10 @@ func parseChannelFeed(body []byte, channelID string) ([]VideoMeta, error) {
 // FetchTranscript loads the watch page, picks the English track (manual
 // preferred over auto-generated) and downloads it as cues.
 func (c *HTTPClient) FetchTranscript(ctx context.Context, videoID string) (Transcript, error) {
-	page, err := c.get(ctx, watchURL+"?v="+videoID+"&hl=en")
+	// videoID may come straight from a feed, so it is escaped rather than
+	// interpolated.
+	q := url.Values{"v": {videoID}, "hl": {"en"}}
+	page, err := c.get(ctx, watchURL+"?"+q.Encode())
 	if err != nil {
 		return Transcript{}, err
 	}
