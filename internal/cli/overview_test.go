@@ -222,3 +222,81 @@ func TestOverviewMergesSponsorSpellingsCaseInsensitively(t *testing.T) {
 		t.Errorf("stdout = %q", stdout)
 	}
 }
+
+func TestOverviewCountsTwoReadsForOneSponsorInOneVideoAsTwoSegments(t *testing.T) {
+	corpusDir := t.TempDir()
+	dir := writeVideoFixture(t, corpusDir, video("UCabc123", "Example Channel", "dQw4w9WgXcQ", "An example video", "2024-01-02T15:04:05Z"))
+	// Mid-roll read written first; the overview orders starts ascending.
+	writeSegmentsFixture(t, dir, processed(segment("Acme", 1830, 1890), segment("Acme", 12.5, 60)))
+
+	code, _, stderr := runOverview(t, corpusDir)
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	got := readFile(t, filepath.Join(corpusDir, "overview.md"))
+	for _, want := range []string{
+		"  - An example video (dQw4w9WgXcQ): [[00:12]](https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=12s), [[30:30]](https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=1830s)\n",
+		"- Acme: 2 Segments\n",
+	} {
+		if !strings.Contains(got, want) {
+			t.Errorf("overview.md lacks %q:\n%s", want, got)
+		}
+	}
+	if n := strings.Count(got, "An example video (dQw4w9WgXcQ)"); n != 1 {
+		t.Errorf("Video listed %d times under its Sponsor, want once with both start times:\n%s", n, got)
+	}
+}
+
+func TestOverviewListsBacklogAndNoTranscriptSeparatelyFromProcessedNoneFound(t *testing.T) {
+	corpusDir := t.TempDir()
+	// Processed, no Sponsors found: appears nowhere.
+	none := writeVideoFixture(t, corpusDir, video("UCaaa", "Alpha", "aaaaaaaaaa1", "Nothing sponsored", "2024-01-01T00:00:00Z"))
+	writeSegmentsFixture(t, none, processed())
+	// No segments.json yet: backlog, by Channel, by publish date.
+	writeVideoFixture(t, corpusDir, video("UCaaa", "Alpha", "aaaaaaaaaa3", "Later unprocessed", "2024-03-01T00:00:00Z"))
+	writeVideoFixture(t, corpusDir, video("UCaaa", "Alpha", "aaaaaaaaaa2", "Earlier unprocessed", "2024-02-01T00:00:00Z"))
+	writeVideoFixture(t, corpusDir, video("UCbbb", "Beta", "bbbbbbbbbb1", "Beta unprocessed", "2024-01-15T00:00:00Z"))
+	// No English track: listed under No transcript, not in the backlog.
+	silent := video("UCbbb", "Beta", "bbbbbbbbbb2", "Silent", "2024-04-01T00:00:00Z")
+	silent.Transcript = corpus.TranscriptNone
+	silent.Track = ""
+	writeVideoFixture(t, corpusDir, silent)
+
+	code, stdout, stderr := runOverview(t, corpusDir)
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	want := `# Sponsorship overview
+
+## By Sponsor
+
+_None._
+
+## By Channel
+
+_None._
+
+## Awaiting agent pass
+
+### Alpha (UCaaa)
+
+- Earlier unprocessed (aaaaaaaaaa2)
+- Later unprocessed (aaaaaaaaaa3)
+
+### Beta (UCbbb)
+
+- Beta unprocessed (bbbbbbbbbb1)
+
+## No transcript
+
+- Beta (UCbbb): Silent (bbbbbbbbbb2)
+`
+	if got := readFile(t, filepath.Join(corpusDir, "overview.md")); got != want {
+		t.Errorf("overview.md =\n%s\nwant\n%s", got, want)
+	}
+	if !strings.HasSuffix(stdout, "sponsors=0  channels=2  awaiting=3\n") {
+		t.Errorf("stdout = %q", stdout)
+	}
+}

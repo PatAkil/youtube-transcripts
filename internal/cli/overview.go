@@ -61,7 +61,7 @@ func Overview(ctx context.Context, deps Deps, corpusDir string, args []string, s
 		fmt.Fprintf(stderr, "overview: %v\n", err)
 		return 1
 	}
-	fmt.Fprintf(stdout, "wrote %s  sponsors=%d  channels=%d  awaiting=%d\n", path, len(ov.sponsors), len(ov.channels), ov.awaitingCount())
+	fmt.Fprintf(stdout, "wrote %s  sponsors=%d  channels=%d  awaiting=%d\n", path, len(ov.sponsors), len(ov.channelSet), ov.awaitingCount())
 	return 0
 }
 
@@ -142,7 +142,7 @@ type overview struct {
 	channels   []*channelEntry
 	awaiting   []*channelVideos // Videos with no segments.json, by Channel
 	noTranscr  []videoRef       // Videos with transcript "none"
-	channelSet map[string]bool
+	channelSet map[string]bool  // every Channel seen in the Corpus
 }
 
 type sponsorEntry struct {
@@ -190,6 +190,11 @@ func buildOverview(videos []scannedVideo) overview {
 		channelNames[chID] = v.Meta.ChannelName
 		if v.Meta.Transcript == corpus.TranscriptNone {
 			noTranscript = append(noTranscript, videoRef{Meta: v.Meta})
+			if v.Segments == nil {
+				// Nothing for the agent pass to read; the No transcript
+				// section is where this Video is waiting.
+				continue
+			}
 		}
 		if v.Segments == nil {
 			cv := awaitingByChannel[chID]
