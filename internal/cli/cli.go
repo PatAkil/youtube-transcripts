@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PatAkil/youtube-transcripts/internal/sponsorblock"
 	"github.com/PatAkil/youtube-transcripts/internal/youtube"
 )
 
@@ -18,8 +19,9 @@ const DefaultCorpusDir = "corpus"
 
 // Deps are the upstreams and clock a command needs. Tests pass fakes.
 type Deps struct {
-	YouTube youtube.Client
-	Now     func() time.Time
+	YouTube      youtube.Client
+	SponsorBlock sponsorblock.Client
+	Now          func() time.Time
 }
 
 const usage = `youtube-transcripts builds and maintains the Corpus: Transcripts of other
@@ -30,7 +32,7 @@ Usage:
 
 Commands:
   fetch     Store one Video's Transcript and metadata in the Corpus
-  sync      Fetch new Videos from every Followed Channel (not available yet)
+  sync      Fetch new Videos from every Followed Channel
   overview  Write the Sponsorship overview from the Segments files
 
 Global flags:
@@ -87,11 +89,10 @@ func Run(args []string, stdout, stderr io.Writer, deps Deps) int {
 	switch sub {
 	case "fetch":
 		return Fetch(ctx, deps, corpusDir, rest, stdout, stderr)
+	case "sync":
+		return Sync(ctx, deps, corpusDir, rest, stdout, stderr)
 	case "overview":
 		return Overview(ctx, deps, corpusDir, rest, stdout, stderr)
-	case "sync":
-		fmt.Fprintf(stderr, "%s is not available yet\n", sub)
-		return 1
 	default:
 		fmt.Fprintf(stderr, "unknown command %q\n\n%s", sub, usage)
 		return 1

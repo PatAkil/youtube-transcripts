@@ -27,7 +27,9 @@ func (rt rewriteTransport) RoundTrip(req *http.Request) (*http.Response, error) 
 type fakeYouTube struct {
 	watchPages map[string]string // video ID -> fixture file for /watch
 	timedText  map[string]string // lang -> fixture file for /api/timedtext
+	feeds      map[string]string // channel ID -> fixture file for /feeds/videos.xml
 	watchCode  int
+	feedCode   int
 }
 
 func newTestClient(t *testing.T, fy fakeYouTube) *HTTPClient {
@@ -40,6 +42,17 @@ func newTestClient(t *testing.T, fy fakeYouTube) *HTTPClient {
 				return
 			}
 			fixture, ok := fy.watchPages[r.URL.Query().Get("v")]
+			if !ok {
+				http.NotFound(w, r)
+				return
+			}
+			serveFixture(t, w, fixture)
+		case "/feeds/videos.xml":
+			if fy.feedCode != 0 {
+				w.WriteHeader(fy.feedCode)
+				return
+			}
+			fixture, ok := fy.feeds[r.URL.Query().Get("channel_id")]
 			if !ok {
 				http.NotFound(w, r)
 				return
@@ -176,6 +189,56 @@ func assertCues(t *testing.T, got, want []Cue) {
 	}
 }
 
+func TestHTTPClientListsNewestVideosFromChannelFeed(t *testing.T) {
+	c := newTestClient(t, fakeYouTube{feeds: map[string]string{"UCabc123": "feed_UCabc123.xml"}})
+
+	got, err := c.ListNewestVideos(context.Background(), "UCabc123")
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []VideoMeta{
+		{
+			VideoID:     "dQw4w9WgXcQ",
+			ChannelID:   "UCabc123",
+			ChannelName: "Example Channel",
+			Title:       `An example video {with braces} & "quotes"`,
+			Published:   time.Date(2024, 1, 2, 15, 4, 5, 0, time.UTC),
+		},
+		{
+			VideoID:     "autoOnly123",
+			ChannelID:   "UCabc123",
+			ChannelName: "Example Channel",
+			Title:       "Second example",
+			Published:   time.Date(2023, 5, 6, 7, 8, 9, 0, time.FixedZone("", -7*3600)),
+		},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %d videos %+v, want %d", len(got), got, len(want))
+	}
+	for i := range want {
+		g, w := got[i], want[i]
+		if g.VideoID != w.VideoID || g.ChannelID != w.ChannelID || g.ChannelName != w.ChannelName || g.Title != w.Title || !g.Published.Equal(w.Published) {
+			t.Errorf("video %d = %+v, want %+v", i, g, w)
+		}
+	}
+}
+
+func TestHTTPClientErrorsOnNonOKFeed(t *testing.T) {
+	c := newTestClient(t, fakeYouTube{feedCode: http.StatusNotFound})
+	_, err := c.ListNewestVideos(context.Background(), "UCtypo")
+	if err == nil || !strings.Contains(err.Error(), "404") || !strings.Contains(err.Error(), "UCtypo") {
+		t.Errorf("err = %v, want one carrying the HTTP status and the channel ID", err)
+	}
+}
+
+func TestHTTPClientErrorsOnFeedThatIsNotAtom(t *testing.T) {
+	c := newTestClient(t, fakeYouTube{feeds: map[string]string{"UCempty": "watch_consent.html"}})
+	_, err := c.ListNewestVideos(context.Background(), "UCempty")
+	if err == nil {
+		t.Error("want an error when the feed is not Atom")
+	}
+}
+
 // TestLiveFetchTranscript reaches real YouTube. Run with YT_LIVE=1.
 func TestLiveFetchTranscript(t *testing.T) {
 	if os.Getenv("YT_LIVE") != "1" {
@@ -195,5 +258,29 @@ func TestLiveFetchTranscript(t *testing.T) {
 	}
 	if tr.Track != TrackNone && len(tr.Cues) == 0 {
 		t.Errorf("track %q reported but no cues", tr.Track)
+	}
+}
+
+// TestLiveListNewestVideos reaches real YouTube. Run with YT_LIVE=1.
+func TestLiveListNewestVideos(t *testing.T) {
+	if os.Getenv("YT_LIVE") != "1" {
+		t.Skip("set YT_LIVE=1 to run the live YouTube smoke test")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	c := NewClient(&http.Client{Timeout: 30 * time.Second})
+
+	// The YouTube channel itself: stable and always has recent Videos.
+	videos, err := c.ListNewestVideos(ctx, "UCBR8-60-B28hp2BmDPdntcQ")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(videos) == 0 {
+		t.Fatal("feed listed no videos")
+	}
+	for _, v := range videos {
+		if v.VideoID == "" || v.ChannelID != "UCBR8-60-B28hp2BmDPdntcQ" || v.Title == "" || v.Published.IsZero() {
+			t.Errorf("incomplete video %+v", v)
+		}
 	}
 }
