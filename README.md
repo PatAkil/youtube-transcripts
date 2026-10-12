@@ -13,7 +13,8 @@ library and needs no API key.
 
 ```sh
 go build          # produces ./youtube-transcripts
-go test ./...     # offline; set YT_LIVE=1 to also run the live YouTube smoke test
+go test ./...     # offline; set YT_LIVE=1 and/or SPONSORBLOCK_LIVE=1 to also run
+                  # the live YouTube and SponsorBlock smoke tests
 ```
 
 ## Commands
@@ -24,7 +25,7 @@ youtube-transcripts [--corpus DIR] <command> [arguments]
 
 | Command    | What it does                                                                        |
 | ---------- | ----------------------------------------------------------------------------------- |
-| `fetch`    | Store one Video's Transcript and metadata in the Corpus. Takes a video ID or any YouTube URL (watch, youtu.be, shorts, embed). `--force` refetches a Video already present. |
+| `fetch`    | Store one Video's Transcript, metadata and Sponsor Slots in the Corpus. Takes a video ID or any YouTube URL (watch, youtu.be, shorts, embed). `--force` refetches a Video already present. |
 | `sync`     | Fetch new Videos from every Followed Channel. _Coming._                              |
 | `overview` | Write the Sponsorship overview from the Segments files. _Coming._                   |
 
@@ -50,7 +51,16 @@ corpus/
                         # fetched, transcript ("ok" | "none"), track ("manual" | "auto" | "")
       transcript.txt    # one cue per line: "[mm:ss] text", "[h:mm:ss]" from one hour on;
                         # absent when transcript is "none"
+      slots.json        # Sponsor Slots from SponsorBlock: {"slots": [{"start", "end",
+                        # "source_ids": [...]}]}; present even when the list is empty
 ```
+
+Slots come from SponsorBlock's public skip-segments endpoint, `sponsor`
+category only (self-promotion and engagement reminders are not Slots), with no
+key. Windows that overlap or touch are merged into one Slot that keeps the IDs
+of the SponsorBlock segments it came from. A Video SponsorBlock has no data on
+gets an empty list; any other SponsorBlock failure fails the fetch and leaves
+nothing partial behind.
 
 A Video with no English track is still recorded (`"transcript": "none"`) so it
 is not retried by accident. Fetching a Video that is already present is a no-op

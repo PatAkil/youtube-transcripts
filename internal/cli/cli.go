@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/PatAkil/youtube-transcripts/internal/sponsorblock"
 	"github.com/PatAkil/youtube-transcripts/internal/youtube"
 )
 
@@ -18,8 +19,9 @@ const DefaultCorpusDir = "corpus"
 
 // Deps are the upstreams and clock a command needs. Tests pass fakes.
 type Deps struct {
-	YouTube youtube.Client
-	Now     func() time.Time
+	YouTube      youtube.Client
+	SponsorBlock sponsorblock.Client
+	Now          func() time.Time
 }
 
 const usage = `youtube-transcripts builds and maintains the Corpus: Transcripts of other

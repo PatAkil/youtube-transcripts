@@ -8,13 +8,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PatAkil/youtube-transcripts/internal/sponsorblock"
 	"github.com/PatAkil/youtube-transcripts/internal/youtube"
 )
 
 func runCLI(t *testing.T, fake *youtube.Fake, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
 	var out, errOut bytes.Buffer
-	code = Run(args, &out, &errOut, Deps{YouTube: fake, Now: func() time.Time { return fixedNow }})
+	code = Run(args, &out, &errOut, Deps{YouTube: fake, SponsorBlock: &sponsorblock.Fake{}, Now: func() time.Time { return fixedNow }})
 	return code, out.String(), errOut.String()
 }
 

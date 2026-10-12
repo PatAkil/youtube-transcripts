@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/PatAkil/youtube-transcripts/internal/sponsorblock"
 	"github.com/PatAkil/youtube-transcripts/internal/youtube"
 )
 
@@ -34,10 +35,17 @@ func manualTranscript() youtube.Transcript {
 	}
 }
 
+// runFetch drives Fetch with a YouTube fake and a SponsorBlock fake that has
+// no data on any Video.
 func runFetch(t *testing.T, corpusDir string, fake *youtube.Fake, args ...string) (code int, stdout, stderr string) {
 	t.Helper()
+	return runFetchWithSlots(t, corpusDir, fake, &sponsorblock.Fake{}, args...)
+}
+
+func runFetchWithSlots(t *testing.T, corpusDir string, yt *youtube.Fake, sb *sponsorblock.Fake, args ...string) (code int, stdout, stderr string) {
+	t.Helper()
 	var out, errOut bytes.Buffer
-	deps := Deps{YouTube: fake, Now: func() time.Time { return fixedNow }}
+	deps := Deps{YouTube: yt, SponsorBlock: sb, Now: func() time.Time { return fixedNow }}
 	code = Fetch(context.Background(), deps, corpusDir, args, &out, &errOut)
 	return code, out.String(), errOut.String()
 }
@@ -82,7 +90,12 @@ func TestFetchStoresTranscriptAndVideoMetadata(t *testing.T) {
 		t.Errorf("video.json =\n%s\nwant\n%s", got, wantVideo)
 	}
 
-	wantLine := "dQw4w9WgXcQ  Example Channel  An example video  lines=3\n"
+	// The SponsorBlock fake has no data on this Video: an empty list, not an error.
+	if got := readFile(t, filepath.Join(videoDir, "slots.json")); got != "{\n  \"slots\": []\n}\n" {
+		t.Errorf("slots.json = %q, want an empty slots list", got)
+	}
+
+	wantLine := "dQw4w9WgXcQ  Example Channel  An example video  lines=3  slots=0\n"
 	if stdout != wantLine {
 		t.Errorf("stdout = %q, want %q", stdout, wantLine)
 	}
@@ -133,12 +146,12 @@ func TestFetchRecordsAutoTrack(t *testing.T) {
 	if !strings.Contains(readFile(t, filepath.Join(videoDir, "transcript.txt")), "[00:12] this video is sponsored by Acme") {
 		t.Error("transcript.txt is missing the auto-track cues")
 	}
-	if !strings.HasSuffix(stdout, "lines=3\n") {
-		t.Errorf("stdout = %q, want it to end with lines=3", stdout)
+	if !strings.Contains(stdout, "lines=3") {
+		t.Errorf("stdout = %q, want it to report lines=3", stdout)
 	}
 }
 
-func TestFetchWithNoEnglishTrackWritesVideoFileOnly(t *testing.T) {
+func TestFetchWithNoEnglishTrackWritesVideoAndSlotsFilesOnly(t *testing.T) {
 	corpusDir := t.TempDir()
 	tr := manualTranscript()
 	tr.Track = youtube.TrackNone
@@ -151,14 +164,14 @@ func TestFetchWithNoEnglishTrackWritesVideoFileOnly(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
 	videoDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
-	if got := entries(t, videoDir); len(got) != 1 || got[0] != "video.json" {
-		t.Errorf("video directory holds %v, want only video.json", got)
+	if got := entries(t, videoDir); strings.Join(got, ",") != "slots.json,video.json" {
+		t.Errorf("video directory holds %v, want slots.json and video.json only", got)
 	}
 	video := decodeVideo(t, filepath.Join(videoDir, "video.json"))
 	if video["transcript"] != "none" || video["track"] != "" {
 		t.Errorf("video.json transcript=%v track=%v, want none/\"\"", video["transcript"], video["track"])
 	}
-	wantLine := "dQw4w9WgXcQ  Example Channel  An example video  lines=0\n"
+	wantLine := "dQw4w9WgXcQ  Example Channel  An example video  lines=0  slots=0\n"
 	if stdout != wantLine {
 		t.Errorf("stdout = %q, want %q", stdout, wantLine)
 	}
@@ -228,7 +241,7 @@ func TestFetchForceRefetchesAndKeepsSegmentsFile(t *testing.T) {
 	if video := decodeVideo(t, filepath.Join(videoDir, "video.json")); video["title"] != "An example video" {
 		t.Errorf("video.json was not rewritten: %v", video)
 	}
-	if got := entries(t, videoDir); strings.Join(got, ",") != "segments.json,transcript.txt,video.json" {
+	if got := entries(t, videoDir); strings.Join(got, ",") != "segments.json,slots.json,transcript.txt,video.json" {
 		t.Errorf("video directory holds %v", got)
 	}
 	if got := entries(t, filepath.Join(corpusDir, "UCabc123")); strings.Join(got, ",") != "dQw4w9WgXcQ" {
@@ -245,8 +258,8 @@ func TestFetchForceDoesNotCreateSegmentsFile(t *testing.T) {
 	if code, _, stderr := runFetch(t, corpusDir, fake, "dQw4w9WgXcQ", "--force"); code != 0 {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
-	if got := entries(t, videoDir); strings.Join(got, ",") != "transcript.txt,video.json" {
-		t.Errorf("video directory holds %v, want transcript.txt and video.json only", got)
+	if got := entries(t, videoDir); strings.Join(got, ",") != "slots.json,transcript.txt,video.json" {
+		t.Errorf("video directory holds %v, want slots.json, transcript.txt and video.json only", got)
 	}
 }
 
@@ -261,7 +274,7 @@ func TestFetchForceMovesVideoWhenChannelDirectoryChanged(t *testing.T) {
 		t.Fatalf("exit %d, stderr %q", code, stderr)
 	}
 	newDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
-	if got := entries(t, newDir); strings.Join(got, ",") != "segments.json,transcript.txt,video.json" {
+	if got := entries(t, newDir); strings.Join(got, ",") != "segments.json,slots.json,transcript.txt,video.json" {
 		t.Errorf("new video directory holds %v", got)
 	}
 	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
@@ -310,5 +323,101 @@ func TestFetchRejectsBadVideoReference(t *testing.T) {
 	}
 	if fake.Calls != 0 {
 		t.Errorf("YouTube was called %d times for an unparseable reference", fake.Calls)
+	}
+}
+
+func TestFetchWritesMergedSlotsFromSponsorBlock(t *testing.T) {
+	corpusDir := t.TempDir()
+	yt := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+	sb := &sponsorblock.Fake{Windows: map[string][]sponsorblock.Window{"dQw4w9WgXcQ": {
+		{Start: 45, End: 87, ID: "uuid-b"},
+		{Start: 12.5, End: 60, ID: "uuid-a"},
+		{Start: 300, End: 330.25, ID: "uuid-c"},
+	}}}
+
+	code, stdout, stderr := runFetchWithSlots(t, corpusDir, yt, sb, "dQw4w9WgXcQ")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	wantSlots := `{
+  "slots": [
+    {
+      "start": 12.5,
+      "end": 87,
+      "source_ids": [
+        "uuid-a",
+        "uuid-b"
+      ]
+    },
+    {
+      "start": 300,
+      "end": 330.25,
+      "source_ids": [
+        "uuid-c"
+      ]
+    }
+  ]
+}
+`
+	if got := readFile(t, filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ", "slots.json")); got != wantSlots {
+		t.Errorf("slots.json =\n%s\nwant\n%s", got, wantSlots)
+	}
+	wantLine := "dQw4w9WgXcQ  Example Channel  An example video  lines=3  slots=2\n"
+	if stdout != wantLine {
+		t.Errorf("stdout = %q, want %q", stdout, wantLine)
+	}
+}
+
+func TestFetchSponsorBlockErrorFailsAndLeavesNothingBehind(t *testing.T) {
+	corpusDir := t.TempDir()
+	writeFile(t, filepath.Join(corpusDir, "UCabc123", "otherVideo1", "video.json"), "{}\n")
+	yt := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+	sb := &sponsorblock.Fake{Errors: map[string]error{"dQw4w9WgXcQ": errors.New("sponsorblock: dQw4w9WgXcQ: HTTP 503")}}
+
+	code, stdout, stderr := runFetchWithSlots(t, corpusDir, yt, sb, "dQw4w9WgXcQ")
+
+	if code != 1 {
+		t.Errorf("exit %d, want 1", code)
+	}
+	if stdout != "" {
+		t.Errorf("stdout = %q, want nothing", stdout)
+	}
+	if !strings.Contains(stderr, "dQw4w9WgXcQ") || !strings.Contains(stderr, "HTTP 503") {
+		t.Errorf("stderr = %q, want the video ID and the SponsorBlock reason", stderr)
+	}
+	if got := entries(t, filepath.Join(corpusDir, "UCabc123")); strings.Join(got, ",") != "otherVideo1" {
+		t.Errorf("channel directory holds %v, want only the pre-existing video (no partial Video directory)", got)
+	}
+	if got := entries(t, corpusDir); strings.Join(got, ",") != "UCabc123" {
+		t.Errorf("corpus holds %v, want only the pre-existing channel directory", got)
+	}
+}
+
+func TestFetchForceRewritesSlotsAndLeavesSegmentsByteIdentical(t *testing.T) {
+	corpusDir := t.TempDir()
+	videoDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
+	writeFile(t, filepath.Join(videoDir, "video.json"), "{}\n")
+	writeFile(t, filepath.Join(videoDir, "slots.json"), "{\n  \"slots\": [\n    {\"start\": 1, \"end\": 2, \"source_ids\": [\"stale\"]}\n  ]\n}\n")
+	// Deliberately not in the CLI's own formatting, so any rewrite would show.
+	segments := "{\"processed\":\"2026-01-01T00:00:00Z\",\"segments\":[{\"sponsor\":\"Acme\",\"start\":12.5,\"end\":60,\"origin\":\"slot\",\"slot_index\":0,\"opening_line\":\"hi\"}]}"
+	writeFile(t, filepath.Join(videoDir, "segments.json"), segments)
+	yt := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+	sb := &sponsorblock.Fake{Windows: map[string][]sponsorblock.Window{"dQw4w9WgXcQ": {{Start: 12.5, End: 60, ID: "uuid-a"}}}}
+
+	code, stdout, stderr := runFetchWithSlots(t, corpusDir, yt, sb, "--force", "dQw4w9WgXcQ")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if !strings.HasSuffix(stdout, "lines=3  slots=1\n") {
+		t.Errorf("stdout = %q, want it to end with slots=1", stdout)
+	}
+	wantSlots := "{\n  \"slots\": [\n    {\n      \"start\": 12.5,\n      \"end\": 60,\n      \"source_ids\": [\n        \"uuid-a\"\n      ]\n    }\n  ]\n}\n"
+	if got := readFile(t, filepath.Join(videoDir, "slots.json")); got != wantSlots {
+		t.Errorf("slots.json was not rewritten:\n%s", got)
+	}
+	if got, err := os.ReadFile(filepath.Join(videoDir, "segments.json")); err != nil || !bytes.Equal(got, []byte(segments)) {
+		t.Errorf("segments.json changed (err %v):\n%s", err, got)
 	}
 }

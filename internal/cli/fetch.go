@@ -76,11 +76,12 @@ type fetchResult struct {
 	AlreadyPresent bool
 	Video          corpus.Video
 	Lines          int
+	Slots          int
 }
 
 // Summary is the one-line report printed after a successful fetch.
 func (r fetchResult) Summary() string {
-	return fmt.Sprintf("%s  %s  %s  lines=%d", r.Video.VideoID, r.Video.ChannelName, r.Video.Title, r.Lines)
+	return fmt.Sprintf("%s  %s  %s  lines=%d  slots=%d", r.Video.VideoID, r.Video.ChannelName, r.Video.Title, r.Lines, r.Slots)
 }
 
 // fetchVideo is the per-Video fetch shared by fetch and sync: presence check,
@@ -98,6 +99,11 @@ func fetchVideo(ctx context.Context, deps Deps, corpusDir, videoID string, force
 	if err != nil {
 		return fetchResult{}, err
 	}
+	windows, err := deps.SponsorBlock.FetchSlots(ctx, videoID)
+	if err != nil {
+		return fetchResult{}, err
+	}
+	slots := corpus.Slots{Slots: corpus.MergeWindows(windows)}
 
 	video := corpus.Video{
 		VideoID:     tr.Meta.VideoID,
@@ -116,7 +122,11 @@ func fetchVideo(ctx context.Context, deps Deps, corpusDir, videoID string, force
 	if err != nil {
 		return fetchResult{}, err
 	}
-	files := map[string][]byte{corpus.VideoFile: videoJSON}
+	slotsJSON, err := corpus.MarshalJSON(slots)
+	if err != nil {
+		return fetchResult{}, err
+	}
+	files := map[string][]byte{corpus.VideoFile: videoJSON, corpus.SlotsFile: slotsJSON}
 	if tr.Track != youtube.TrackNone {
 		files[corpus.TranscriptFile] = []byte(renderTranscript(tr.Cues))
 	}
@@ -125,7 +135,7 @@ func fetchVideo(ctx context.Context, deps Deps, corpusDir, videoID string, force
 	if err := corpus.WriteVideoDir(corpusDir, video.ChannelID, video.VideoID, files, existing, keep); err != nil {
 		return fetchResult{}, err
 	}
-	return fetchResult{Video: video, Lines: len(tr.Cues)}, nil
+	return fetchResult{Video: video, Lines: len(tr.Cues), Slots: len(slots.Slots)}, nil
 }
 
 func renderTranscript(cues []youtube.Cue) string {

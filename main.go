@@ -9,13 +9,15 @@ import (
 	"time"
 
 	"github.com/PatAkil/youtube-transcripts/internal/cli"
+	"github.com/PatAkil/youtube-transcripts/internal/sponsorblock"
 	"github.com/PatAkil/youtube-transcripts/internal/youtube"
 )
 
 func main() {
 	deps := cli.Deps{
-		YouTube: youtube.NewClient(&http.Client{Timeout: 60 * time.Second}),
-		Now:     time.Now,
+		YouTube:      youtube.NewClient(&http.Client{Timeout: 60 * time.Second}),
+		SponsorBlock: sponsorblock.NewClient(&http.Client{Timeout: 30 * time.Second}),
+		Now:          time.Now,
 	}
 	os.Exit(cli.Run(os.Args[1:], os.Stdout, os.Stderr, deps))
 }
