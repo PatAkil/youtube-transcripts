@@ -13,14 +13,34 @@ import (
 // Fetch stores one Video's Transcript and metadata in the Corpus. It returns
 // the process exit code.
 func Fetch(ctx context.Context, deps Deps, corpusDir string, args []string, stdout, stderr io.Writer) int {
-	if len(args) != 1 {
+	var force bool
+	var positional []string
+	for _, a := range args {
+		switch a {
+		case "--force", "-force":
+			force = true
+		default:
+			positional = append(positional, a)
+		}
+	}
+	if len(positional) != 1 {
 		fmt.Fprintln(stderr, "fetch: expected exactly one video ID or URL")
 		return 1
 	}
-	videoID, err := youtube.ParseVideoID(args[0])
+	videoID, err := youtube.ParseVideoID(positional[0])
 	if err != nil {
 		fmt.Fprintf(stderr, "fetch: %v\n", err)
 		return 1
+	}
+
+	existing, err := corpus.FindVideo(corpusDir, videoID)
+	if err != nil {
+		fmt.Fprintf(stderr, "fetch %s: %v\n", videoID, err)
+		return 1
+	}
+	if existing != "" && !force {
+		fmt.Fprintf(stdout, "%s already present\n", videoID)
+		return 0
 	}
 
 	tr, err := deps.YouTube.FetchTranscript(ctx, videoID)
@@ -51,7 +71,9 @@ func Fetch(ctx context.Context, deps Deps, corpusDir string, args []string, stdo
 	if tr.Track != youtube.TrackNone {
 		files[corpus.TranscriptFile] = []byte(renderTranscript(tr.Cues))
 	}
-	if err := corpus.WriteVideoDir(corpusDir, video.ChannelID, video.VideoID, files, nil); err != nil {
+	// The agent pass owns segments.json; a refetch carries it over untouched.
+	keep := []string{corpus.SegmentsFile}
+	if err := corpus.WriteVideoDir(corpusDir, video.ChannelID, video.VideoID, files, existing, keep); err != nil {
 		fmt.Fprintf(stderr, "fetch %s: %v\n", videoID, err)
 		return 1
 	}

@@ -162,3 +162,108 @@ func TestFetchWithNoEnglishTrackWritesVideoFileOnly(t *testing.T) {
 		t.Errorf("stdout = %q, want %q", stdout, wantLine)
 	}
 }
+
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFetchSkipsVideoAlreadyPresentWithoutCallingYouTube(t *testing.T) {
+	corpusDir := t.TempDir()
+	// The Video sits under a Channel directory other than the one the fake
+	// would report, to show presence is decided by the video ID alone.
+	videoDir := filepath.Join(corpusDir, "UCother", "dQw4w9WgXcQ")
+	writeFile(t, filepath.Join(videoDir, "video.json"), "{}\n")
+	writeFile(t, filepath.Join(corpusDir, "followed-channels.json"), "[]\n")
+	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+
+	code, stdout, stderr := runFetch(t, corpusDir, fake, "dQw4w9WgXcQ")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if stdout != "dQw4w9WgXcQ already present\n" {
+		t.Errorf("stdout = %q, want %q", stdout, "dQw4w9WgXcQ already present\n")
+	}
+	if fake.Calls != 0 {
+		t.Errorf("YouTube was called %d times, want 0", fake.Calls)
+	}
+	if got := readFile(t, filepath.Join(videoDir, "video.json")); got != "{}\n" {
+		t.Errorf("video.json was rewritten to %q", got)
+	}
+	if _, err := os.Stat(filepath.Join(corpusDir, "UCabc123")); !os.IsNotExist(err) {
+		t.Error("a new channel directory was created for an already present Video")
+	}
+}
+
+func TestFetchForceRefetchesAndKeepsSegmentsFile(t *testing.T) {
+	corpusDir := t.TempDir()
+	videoDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
+	writeFile(t, filepath.Join(videoDir, "video.json"), "{\"stale\": true}\n")
+	writeFile(t, filepath.Join(videoDir, "transcript.txt"), "[00:00] stale\n")
+	segments := "{\n  \"processed\": \"2026-01-01T00:00:00Z\",\n  \"segments\": [\n    {\"sponsor\": \"Acme\", \"start\": 12.3, \"end\": 60, \"origin\": \"slot\", \"slot_index\": 0, \"opening_line\": \"hi\"}\n  ]\n}\n"
+	writeFile(t, filepath.Join(videoDir, "segments.json"), segments)
+	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+
+	code, stdout, stderr := runFetch(t, corpusDir, fake, "--force", "dQw4w9WgXcQ")
+
+	if code != 0 || stderr != "" {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if !strings.HasPrefix(stdout, "dQw4w9WgXcQ  Example Channel  An example video  lines=3") {
+		t.Errorf("stdout = %q, want the fetch summary line", stdout)
+	}
+	if got := readFile(t, filepath.Join(videoDir, "segments.json")); got != segments {
+		t.Errorf("segments.json changed:\n%s", got)
+	}
+	if got := readFile(t, filepath.Join(videoDir, "transcript.txt")); strings.Contains(got, "stale") {
+		t.Errorf("transcript.txt was not rewritten: %q", got)
+	}
+	if video := decodeVideo(t, filepath.Join(videoDir, "video.json")); video["title"] != "An example video" {
+		t.Errorf("video.json was not rewritten: %v", video)
+	}
+	if got := entries(t, videoDir); strings.Join(got, ",") != "segments.json,transcript.txt,video.json" {
+		t.Errorf("video directory holds %v", got)
+	}
+	if got := entries(t, filepath.Join(corpusDir, "UCabc123")); strings.Join(got, ",") != "dQw4w9WgXcQ" {
+		t.Errorf("channel directory holds %v, want only the video directory (no temp or .old leftovers)", got)
+	}
+}
+
+func TestFetchForceDoesNotCreateSegmentsFile(t *testing.T) {
+	corpusDir := t.TempDir()
+	videoDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
+	writeFile(t, filepath.Join(videoDir, "video.json"), "{}\n")
+	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+
+	if code, _, stderr := runFetch(t, corpusDir, fake, "dQw4w9WgXcQ", "--force"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	if got := entries(t, videoDir); strings.Join(got, ",") != "transcript.txt,video.json" {
+		t.Errorf("video directory holds %v, want transcript.txt and video.json only", got)
+	}
+}
+
+func TestFetchForceMovesVideoWhenChannelDirectoryChanged(t *testing.T) {
+	corpusDir := t.TempDir()
+	oldDir := filepath.Join(corpusDir, "UCother", "dQw4w9WgXcQ")
+	writeFile(t, filepath.Join(oldDir, "video.json"), "{}\n")
+	writeFile(t, filepath.Join(oldDir, "segments.json"), "{\"processed\": \"2026-01-01T00:00:00Z\", \"segments\": []}\n")
+	fake := &youtube.Fake{Transcripts: map[string]youtube.Transcript{"dQw4w9WgXcQ": manualTranscript()}}
+
+	if code, _, stderr := runFetch(t, corpusDir, fake, "--force", "dQw4w9WgXcQ"); code != 0 {
+		t.Fatalf("exit %d, stderr %q", code, stderr)
+	}
+	newDir := filepath.Join(corpusDir, "UCabc123", "dQw4w9WgXcQ")
+	if got := entries(t, newDir); strings.Join(got, ",") != "segments.json,transcript.txt,video.json" {
+		t.Errorf("new video directory holds %v", got)
+	}
+	if _, err := os.Stat(oldDir); !os.IsNotExist(err) {
+		t.Error("stale video directory under the previous channel directory still exists")
+	}
+}

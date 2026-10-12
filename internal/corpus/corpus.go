@@ -53,9 +53,12 @@ func MarshalJSON(v any) ([]byte, error) {
 // WriteVideoDir atomically replaces the Video directory for channelID/videoID
 // with one holding exactly files. The directory is built in a temporary
 // sibling and renamed into place, so a failure part-way leaves nothing behind.
-// Files already present under names listed in keep are carried over from the
-// old directory when it exists.
-func WriteVideoDir(corpusDir, channelID, videoID string, files map[string][]byte, keep []string) error {
+//
+// previous is the Video's current directory when it is already in the Corpus
+// (it may sit under another channel directory), or "". Files named in keep are
+// copied from previous into the new directory before the swap, and previous is
+// removed only once the new directory is complete.
+func WriteVideoDir(corpusDir, channelID, videoID string, files map[string][]byte, previous string, keep []string) error {
 	channelDir := filepath.Join(corpusDir, channelID)
 	if err := os.MkdirAll(channelDir, 0o755); err != nil {
 		return fmt.Errorf("create channel directory: %w", err)
@@ -74,21 +77,26 @@ func WriteVideoDir(corpusDir, channelID, videoID string, files map[string][]byte
 			return fmt.Errorf("write %s: %w", name, err)
 		}
 	}
-	for _, name := range keep {
-		data, err := os.ReadFile(filepath.Join(final, name))
-		if os.IsNotExist(err) {
-			continue
-		}
-		if err != nil {
-			cleanupTmp()
-			return fmt.Errorf("preserve %s: %w", name, err)
-		}
-		if err := os.WriteFile(filepath.Join(tmp, name), data, 0o644); err != nil {
-			cleanupTmp()
-			return fmt.Errorf("preserve %s: %w", name, err)
+	if previous != "" {
+		for _, name := range keep {
+			data, err := os.ReadFile(filepath.Join(previous, name))
+			if os.IsNotExist(err) {
+				continue
+			}
+			if err != nil {
+				cleanupTmp()
+				return fmt.Errorf("preserve %s: %w", name, err)
+			}
+			if err := os.WriteFile(filepath.Join(tmp, name), data, 0o644); err != nil {
+				cleanupTmp()
+				return fmt.Errorf("preserve %s: %w", name, err)
+			}
 		}
 	}
 
+	// Move any directory already at the final path aside, swap the new one
+	// in, then drop the old one. If the swap fails the old directory is put
+	// back, so the Corpus never loses a Video half-way.
 	old := final + ".old"
 	hadOld := false
 	if _, err := os.Stat(final); err == nil {
@@ -107,6 +115,11 @@ func WriteVideoDir(corpusDir, channelID, videoID string, files map[string][]byte
 	}
 	if hadOld {
 		if err := os.RemoveAll(old); err != nil {
+			return fmt.Errorf("remove previous video directory: %w", err)
+		}
+	}
+	if previous != "" && filepath.Clean(previous) != filepath.Clean(final) {
+		if err := os.RemoveAll(previous); err != nil {
 			return fmt.Errorf("remove previous video directory: %w", err)
 		}
 	}
